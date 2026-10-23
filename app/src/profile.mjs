@@ -2,9 +2,9 @@
 import { fileURLToPath } from 'node:url'
 import { initProfile, loadProfileDirectory, readProfileManifest, resolveProfileDir, writeProfileBundles } from '@deepseek-ai/dsh-app-boot'
 
-export const PROFILE = 'ds-bot'
+export const PROFILE = 'miasaki-dsbot'
 // DSH's shared core, DSH's web front end (the window), then the Bot team. Bundles the user installs follow.
-export const BUNDLES = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'ds-bot']
+export const BUNDLES = ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', 'miasaki-dsbot']
 // The first-run check reads a copy of the team's chats without the Bot team running on them.
 // DSH reads a log the same way whatever the profile mounts.
 export const CHECK_PROFILE = 'import-check'

@@ -1,6 +1,6 @@
-appId: io.github.fei2411.deepseekbot
+appId: io.github.miasakiii.dsbot
 productName: DeepSeek Bot
-copyright: Copyright 2026 Fei2411 and the DS Bot contributors
+copyright: Copyright 2026 Miasakiii and the DS Bot contributors
 artifactName: DeepSeek-Bot-${version}-${os}-${arch}.${ext}
 directories:
   output: dist-pack
@@ -42,5 +42,5 @@ mac:
 # so the build itself never publishes (--publish never).
 publish:
   provider: github
-  owner: Fei2411
+  owner: Miasakiii
   repo: DeepSeek-Bot

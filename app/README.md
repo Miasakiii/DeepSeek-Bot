@@ -1,6 +1,6 @@
 # DeepSeek Bot desktop app
 
-The Electron app for Windows and macOS. It installs a pinned DeepSeek Harness (DSH 0.2.1-rc.2) and the `ds-bot` plugin of this repository, boots its own DSH profile `ds-bot` through `@deepseek-ai/dsh/profile-boot`, and keeps its data in its own `DSH_HOME`. It never writes to `~/.dsh`. Its window shows DSH's Web front end with the plugin, as DSH Desktop does. The design is in [docs/plans/2026-10-16-desktop-app.md](../docs/plans/2026-10-16-desktop-app.md).
+The Electron app for Windows and macOS. It installs a pinned DeepSeek Harness (DSH 0.2.1-rc.2) and the `miasaki-dsbot` plugin of this repository, boots its own DSH profile `miasaki-dsbot` through `@deepseek-ai/dsh/profile-boot`, and keeps its data in its own `DSH_HOME`. It never writes to `~/.dsh`. Its window shows DSH's Web front end with the plugin, as DSH Desktop does. The design is in [docs/plans/2026-10-16-desktop-app.md](../docs/plans/2026-10-16-desktop-app.md).
 
 ## Run
 
@@ -12,12 +12,12 @@ npm start                               # starts the app
 
 When GitHub downloads are slow, set `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/` before the Electron download. Unset `ELECTRON_RUN_AS_NODE` before `npm start` if your terminal has it (terminals inside some Electron-based editors do): with it, Electron runs as plain Node and the app does not start.
 
-npm installs `ds-bot` from `../ds-bot` as a copy of its package files (`install-links` in `.npmrc`), so the app runs the plugin of this checkout. Run `npm ci` again after you change `ds-bot` or merge a branch that changes it: while the version stays the same, `npm install` keeps the old copy. `overrides` in `package.json` pins the four peer dependencies of `ds-bot` to the DSH version: they are declared as `*`, and npm does not choose a pre-release to satisfy `*`.
+npm installs `miasaki-dsbot` from `../ds-bot` as a copy of its package files (`install-links` in `.npmrc`), so the app runs the plugin of this checkout. Run `npm ci` again after you change `ds-bot` or merge a branch that changes it: while the version stays the same, `npm install` keeps the old copy. `overrides` in `package.json` pins the four peer dependencies of `miasaki-dsbot` to the DSH version: they are declared as `*`, and npm does not choose a pre-release to satisfy `*`.
 
 | Variable | What it sets | Default |
 |---|---|---|
 | `DS_BOT_HOME` | The data location: the `DSH_HOME` of the app. When it is set, the app asks nothing at its first start and imports nothing | The folder chosen at the first start |
-| `DS_BOT_WORKSPACE` | With `DS_BOT_HOME`: the team workspace | `bot/workspace` in the data location |
+| `DS_BOT_WORKSPACE` | With `DS_BOT_HOME`: the team workspace | `miasaki-dsbot/workspace` in the data location |
 | `DS_BOT_SHELL_DATA` | The app's own data (window, Chromium storage, `locations.json`) | Electron's `userData` (Windows: `%APPDATA%\DeepSeek Bot`; macOS: `~/Library/Application Support/DeepSeek Bot`) |
 | `DS_BOT_UPDATE_URL` | Windows: a folder URL with `latest.yml` and its installer. macOS: a URL returning a JSON list like GitHub's `releases` API; a release counts only when this Mac's zip is attached. Prereleases count only for prerelease installs (see [Updates](#updates)). With `DS_BOT_HOME`, the app checks only when this is set | The newest GitHub release |
 
@@ -25,23 +25,23 @@ On macOS, Electron's default `userData` directory for `productName` "DeepSeek Bo
 
 ## First start and import
 
-At its first start the app asks, in system dialogs, for the data location (`~/.ds-bot` by default) and the team workspace (`~/DeepSeek Bot`), and keeps the answer in `locations.json` in its own data. Neither folder may be inside the other or inside the user's DSH data.
+At its first start the app asks, in system dialogs, for the data location (`~/.miasaki-dsbot` by default) and the team workspace (`~/DeepSeek Bot`), and keeps the answer in `locations.json` in its own data. Neither folder may be inside the other or inside the user's DSH data.
 
 Both change later in DS Bot's Settings > General > Locations. The plugin moves the team workspace and tells the app, which writes it into `locations.json`. The app names the user's DSH data to the plugin (`DS_BOT_USER_DSH_HOME`), so that neither the team workspace nor a Bot's folder can be set there. The data location moves through the app (`src/move-data.mjs`): the new folder must be empty or new and apart from the old data, the team workspace, the user's DSH data and the program folder. The app stops the Host, copies the data (without the team's lock) into a staging folder beside the new one, renames it to the new folder once it is whole, writes `locations.json` and starts again. A failed or interrupted copy leaves the old location in use and removes the staging folder; the old folder always stays. A run on throwaway folders (`DS_BOT_HOME`) keeps its data location.
 
-When the user's DSH (`DSH_HOME`, else `~/.dsh`) has a Bot team, the app offers to copy it (`src/import.mjs`). It only reads there. Before the copy it checks that no running DSH holds the team and that no chat is in a newer session format than the pinned DSH reads. Then the pinned DSH reads each chat once: a newer DSH can write records that the pinned one refuses in the same format. It reads a throwaway copy in the data location, with a profile of its own (`import-check`: `dsh-base` and `dsh-web-app`, without `ds-bot`), and removes the copy afterwards. A chat that a newer DSH wrote stops the copy as a newer format does; a damaged one does not, since the user's DSH cannot read it either. Then the app starts the Host once on the new data location, so that DSH does not register the copied Sessions' folders as projects. The copy takes `bot/` (without its lock, turns in flight and workspace), every Session the team names, the attachments, `.credentials.yaml`, `.env`, the model rows of one profile's `cordis.patch.yml`, and the old team workspace's files, which go into the new folder without replacing a file there. `bot/imported.json` records it. At its next turn, each Bot and group moves on to a fresh part in the new folder.
+When the user's DSH (`DSH_HOME`, else `~/.dsh`) has a Bot team, the app offers to copy it (`src/import.mjs`). It only reads there. Before the copy it checks that no running DSH holds the team and that no chat is in a newer session format than the pinned DSH reads. Then the pinned DSH reads each chat once: a newer DSH can write records that the pinned one refuses in the same format. It reads a throwaway copy in the data location, with a profile of its own (`import-check`: `dsh-base` and `dsh-web-app`, without `miasaki-dsbot`), and removes the copy afterwards. A chat that a newer DSH wrote stops the copy as a newer format does; a damaged one does not, since the user's DSH cannot read it either. Then the app starts the Host once on the new data location, so that DSH does not register the copied Sessions' folders as projects. The copy takes the team folder (`miasaki-dsbot/`, or `bot/` for a team the upstream ds-bot made, without its lock, turns in flight and workspace), every Session the team names, the attachments, `.credentials.yaml`, `.env`, the model rows of one profile's `cordis.patch.yml`, and the old team workspace's files, which go into the new folder without replacing a file there. `miasaki-dsbot/imported.json` records it. At its next turn, each Bot and group moves on to a fresh part in the new folder.
 
 The Host reads model settings and keys the way DSH does: environment variables such as `DEEPSEEK_API_KEY`, and `.env` and `.credentials.yaml` in the data location. DSH's settings in the window set up model providers and their keys; DSH keeps the providers in the profile's `cordis.patch.yml` and the keys in `.credentials.yaml`.
 
 ## The profile
 
-The Host's profile `ds-bot` is in `profiles/ds-bot` in the data location. It stacks three bundles, and after them the bundles that the user installs:
+The Host's profile `miasaki-dsbot` is in `profiles/miasaki-dsbot` in the data location. It stacks three bundles, and after them the bundles that the user installs:
 
 | Bundle | What it adds |
 |---|---|
 | `@deepseek-ai/dsh-base` | DSH's shared core: models, Sessions, tools, settings, plugin management |
-| `@deepseek-ai/dsh-web-app` | DSH's Web front end, which the window shows, and the host services that it and ds-bot use |
-| `ds-bot` | The Bot team |
+| `@deepseek-ai/dsh-web-app` | DSH's Web front end, which the window shows, and the host services that it and the plugin use |
+| `miasaki-dsbot` | The Bot team |
 
 At every start the Host puts these three bundles at the head of the profile's bundle list. Settings for one machine go into the profile's `cordis.patch.yml`, as in DSH. A profile from an earlier build that lists `deepseek-bot-engine` gets `@deepseek-ai/dsh-web-app` in its place.
 
@@ -85,7 +85,7 @@ The checks start before the Host (after a first start's import), so that a versi
 
 On macOS, the app checks GitHub's releases at start and every 4 hours. It asks once per version, after that release's zip for this Mac is attached. Stable installs ignore prereleases; prerelease installs can see them. Download opens the release page; Later closes the dialog. The app does not install the update itself. `DS_BOT_UPDATE_URL` on macOS points to a JSON list like the `releases` API response. A release needs `tag_name`, an HTTPS `html_url`, and the matching architecture's zip in `assets`.
 
-On Windows, `app-update.yml` tells the app where its releases are; `npm run dist` writes it from `publish` in `electron-builder.yml`, together with `latest.yml` beside the installer (`npm run pack` writes neither). Neither command publishes. The release workflow (`.github/workflows/release.yml`) builds the installer when a release is published and attaches the installer, its `.blockmap` and `latest.yml` to the release. The release tag is the version of `ds-bot`, and `npm test` checks that the app has the same version. The macOS release job builds each zip on a matching-architecture runner and attaches only the zip.
+On Windows, `app-update.yml` tells the app where its releases are; `npm run dist` writes it from `publish` in `electron-builder.yml`, together with `latest.yml` beside the installer (`npm run pack` writes neither). Neither command publishes. The release workflow (`.github/workflows/release.yml`) builds the installer when a release is published and attaches the installer, its `.blockmap` and `latest.yml` to the release. The release tag is the version of `miasaki-dsbot`, and `npm test` checks that the app has the same version. The macOS release job builds each zip on a matching-architecture runner and attaches only the zip.
 
 On throwaway folders (`DS_BOT_HOME`) the app checks for updates only from `DS_BOT_UPDATE_URL`, and it never asks: the update waits until the app quits. `scripts/check-update.mjs` checks the update of a packaged app with such a feed:
 
@@ -122,7 +122,7 @@ The script serves a releases list with one release of that version that has this
 | `src/updates.mjs` | The Windows installer updates and macOS release-page checks |
 | `engine/` | On hold, not installed: the bundle `deepseek-bot-engine` for the app's own window in `ui/` |
 | `test/` | `npm test`: the composition of the profile, and the dependencies that the package needs |
-| `ui/` | On hold, not built or packaged: the app's own window. React, built with Vite (`vite.config.js`) into `ui/dist`. It draws the plugin's own Bot views from `../ds-bot/src/client/` (sidebar, chat rows, docks, dialogs and their stylesheets) and puts its own Markdown in place of DSH's. It uses ds-bot's `api/bot` channel and its live feed `api/bot/feed` |
+| `ui/` | On hold, not built or packaged: the app's own window. React, built with Vite (`vite.config.js`) into `ui/dist`. It draws the plugin's own Bot views from `../ds-bot/src/client/` (sidebar, chat rows, docks, dialogs and their stylesheets) and puts its own Markdown in place of DSH's. It uses the plugin's `api/bot` channel and its live feed `api/bot/feed` |
 | `assets/` | The app icon: `icon.svg`, `icon.png` (1024 px) and `icon.ico` (Windows, 16 to 256 px). `npm run icon` (`scripts/icon.mjs`) draws them again from the Main Bot's whale in `../ds-bot` |
 | `electron-builder.yml`, `build/` | The package and the installer: app identity, files, icons, the Windows installer and the macOS disk image |
 | `scripts/check-packed.mjs` | `npm run check-packed`: the check of a packaged app |

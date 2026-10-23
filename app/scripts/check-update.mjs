@@ -30,7 +30,7 @@ const server = createServer((request, response) => {
     served.push(pathname)
     response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify([{
       tag_name: `v${version}`,
-      html_url: `https://github.com/Fei2411/DeepSeek-Bot/releases/tag/v${version}`,
+      html_url: `https://github.com/Miasakiii/DeepSeek-Bot/releases/tag/v${version}`,
       draft: false,
       prerelease: false,
       assets: [{ name: `DeepSeek-Bot-${version}-mac-${process.arch}.zip` }],

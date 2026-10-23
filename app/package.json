@@ -4,7 +4,7 @@
   "version": "0.2.0",
   "private": true,
   "description": "DeepSeek Bot desktop app: the ds-bot team on its own pinned DeepSeek Harness.",
-  "author": "Fei2411",
+  "author": "Miasakiii",
   "license": "Apache-2.0",
   "type": "module",
   "main": "src/main.mjs",
@@ -51,7 +51,7 @@
     "@deepseek-ai/dsh-util-time": "0.2.1-rc.2",
     "@deepseek-ai/dsh-util-workspace-path": "0.2.1-rc.2",
     "@deepseek-ai/dsh-workflow": "0.2.1-rc.2",
-    "ds-bot": "file:../ds-bot",
+    "miasaki-dsbot": "file:../ds-bot",
     "electron-updater": "6.8.10",
     "pnpm": "11.7.0",
     "yaml": "2.9.1"
