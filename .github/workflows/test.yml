@@ -161,7 +161,7 @@ jobs:
           $dir = Join-Path $env:LOCALAPPDATA 'Programs\DeepSeek Bot'
           $exe = Join-Path $dir 'DeepSeek Bot.exe'
           # The uninstaller removes the program only: the data location and the app's own data stay.
-          $kept = foreach ($folder in (Join-Path $HOME '.ds-bot'), (Join-Path $env:APPDATA 'DeepSeek Bot')) {
+          $kept = foreach ($folder in (Join-Path $HOME '.miasaki-dsbot'), (Join-Path $env:APPDATA 'DeepSeek Bot')) {
             New-Item -ItemType Directory -Force $folder | Out-Null
             $file = Join-Path $folder 'kept.txt'
             Set-Content $file 'kept'
