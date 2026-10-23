@@ -3,9 +3,10 @@
 // other's changes. The first host to load takes `state.lock`; a second one only reads.
 //
 // The lock is a small JSON file (pid, host, a random token) whose mtime the holder bumps
-// on a timer. On the same host, its process decides whether it is live; `staleMs` only
-// covers other hosts and unreadable files. A reused pid after a crash keeps the second
-// host read-only until that process ends. The token, not the pid, decides ownership: a
+// on a timer. A live holder on the same host needs both: a process that still runs under
+// that pid and a heartbeat fresher than `staleMs` — a crashed holder's pid may be reused
+// by an unrelated process, and without the heartbeat check that process would hold the
+// team read-only for as long as it runs. The token, not the pid, decides ownership: a
 // holder that finds another token has lost the lock.
 import { randomUUID } from 'node:crypto'
 import { readFileSync, statSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
@@ -21,17 +22,18 @@ export function pidAlive(pid) {
   }
 }
 
-// Whether a lock file's holder still holds it: its process on this host, else a fresh
-// mtime. `holder` is what `homeLock(path).read()` answers: undefined for no file, null
-// for one that does not parse (being written right now).
+// Whether a lock file's holder still holds it. `holder` is what `homeLock(path).read()`
+// answers: undefined for no file, null for one that does not parse (being written right
+// now). A live holder needs a live process on this host and a fresh heartbeat mtime, so
+// a reused pid after a crash does not keep the team read-only.
 export function holderLive(holder, path, { staleMs = 60_000, host = hostname(), pid = process.pid, isAlive = pidAlive, now = Date.now } = {}) {
-  if (holder === undefined) return false
-  const fresh = () => {
-    try { return now() - statSync(path).mtimeMs < staleMs } catch { return false }
+  const age = () => {
+    try { return now() - statSync(path).mtimeMs } catch { return Infinity }
   }
-  if (holder === null) return fresh()
-  if (holder.host === host) return holder.pid !== pid && isAlive(holder.pid)
-  return fresh()
+  if (holder === undefined) return false
+  if (holder === null) return age() < staleMs
+  if (holder.host === host) return holder.pid !== pid && isAlive(holder.pid) && age() < staleMs
+  return age() < staleMs
 }
 
 export function homeLock(path, { staleMs = 60_000, beatMs = 15_000, host = hostname(), pid = process.pid, isAlive = pidAlive, now = Date.now } = {}) {
