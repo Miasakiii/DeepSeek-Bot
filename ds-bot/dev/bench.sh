@@ -56,8 +56,8 @@ ensure_profile() {
 {
   "name": "dsh-profile-web",
   "private": true,
-  "dependencies": { "ds-bot": "link:$PLUGIN" },
-  "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app", "ds-bot"] } }
+  "dependencies": { "miasaki-dsbot": "link:$PLUGIN" },
+  "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app", "miasaki-dsbot"] } }
 }
 EOF
   printf 'packages:\n  - .\n\nnodeLinker: hoisted\nautoInstallPeers: false\n' > "$profile/pnpm-workspace.yaml"
@@ -69,7 +69,7 @@ write_overlay() {
   overlay="$HOME_DIR/bench.patch.yml"
   printf '[]\n' > "$overlay"
   if [ -n "${CHECK_RATIO:-}" ]; then
-    printf -- '- id: bot\n  config:\n    checkRatio: %s\n' "$CHECK_RATIO" > "$overlay"
+    printf -- '- id: miasaki-bot\n  config:\n    checkRatio: %s\n' "$CHECK_RATIO" > "$overlay"
   fi
   if [ -n "${CONTEXT_WINDOW:-}" ]; then
     [ -n "${CHECK_RATIO:-}" ] || : > "$overlay"
@@ -130,7 +130,7 @@ case "$ACTION" in
     stop_one web
     stop_one mock
     rm -f "$HOME_DIR/mock.jsonl" "$HOME_DIR/cookies.txt"
-    rm -rf "$HOME_DIR/bot" "$HOME_DIR"/sessions/*workspace*/session-*
+    rm -rf "$HOME_DIR/miasaki-dsbot" "$HOME_DIR"/sessions/*workspace*/session-*
     start
     ;;
   status) status ;;

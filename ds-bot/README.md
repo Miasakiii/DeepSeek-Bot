@@ -1,4 +1,4 @@
-# ds-bot
+# miasaki-dsbot
 
 The DS Bot plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (dsh). It turns dsh into a team of long-lived Bots that talk to you, to each other and in group chats. See the [project page](../README.md) for an overview, install steps and screenshots.
 
@@ -35,15 +35,15 @@ Tested with dsh `0.2.1-rc.2` (Web) and `0.2.0-rc.2` (Web and Desktop).
 
 The [project page](../README.md#install) has the full steps for dsh Desktop and dsh Web. In short:
 
-- dsh Desktop: Settings → Plugins → add `ds-bot` (npm), a `.tgz` file, or `github:Fei2411/DeepSeek-Bot#v0.1.7&path:/ds-bot`.
-- Command line: `dsh plugin --profile desktop add ds-bot` (or `--profile web`).
+- dsh Desktop: Settings → Plugins → add `miasaki-dsbot` (npm), a `.tgz` file, or `github:Miasakiii/DeepSeek-Bot#v0.1.7&path:/ds-bot`.
+- Command line: `dsh plugin --profile desktop add miasaki-dsbot` (or `--profile web`).
 
 To work on the plugin from a checkout, add it to a dsh profile as a linked dependency and a bundle:
 
 ```json
 {
-  "dependencies": { "ds-bot": "link:/path/to/ds-bot" },
-  "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app", "ds-bot"] } }
+  "dependencies": { "miasaki-dsbot": "link:/path/to/ds-bot" },
+  "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app", "miasaki-dsbot"] } }
 }
 ```
 
@@ -55,18 +55,18 @@ pnpm -s dsh --profile web --no-open
 
 The first time the team opens, the plugin creates a Main Bot called Chief.
 
-**Upgrading from the legacy `dsh-bot` package**: earlier builds used the package name `dsh-bot`. Remove `dsh-bot` from the profile before you add `ds-bot`, because both use the plugin id `bot`. Your team, chats and secrets stay where they are (see [Data and backups](#data-and-backups)); saved browser settings, the theme and Bot colors move over the first time DS Bot opens.
+**Upgrading from the `ds-bot` package**: this fork is a plugin of its own, with its own id (`miasaki-bot`) and its own data folder (`miasaki-dsbot/`), so you can add it while `ds-bot` stays installed. The first time it opens it moves the team from `bot/` into its own folder — unless another dsh is using that team right now, in which case it starts a team of its own. Your team, chats and secrets stay where they are (see [Data and backups](#data-and-backups)); saved browser settings, the theme and Bot colors move over the first time DS Bot opens.
 
 ## Configuration
 
-Options go in the profile's `cordis.patch.yml`, under the `bot` entry. All of them are optional.
+Options go in the profile's `cordis.patch.yml`, under the `miasaki-bot` entry. All of them are optional.
 
 ```yaml
-- id: bot
-  name: ds-bot
+- id: miasaki-bot
+  name: miasaki-dsbot
   config:
     workspace: /path/to/workspace   # where the Bots work; default <home>/workspace
-    home: /path/to/bot-data         # where the team is saved; default $DSH_HOME/bot
+    home: /path/to/bot-data         # where the team is saved; default $DSH_HOME/miasaki-dsbot
     checkRatio: 0.8                 # share of the model's usable window where the steward decides
     browser: true                   # force the Bot browser on or off; default on in Desktop only
     memory: true                    # false turns memory off: no memory tools, section or panel
@@ -114,7 +114,7 @@ A read-only dsh (see [Data and backups](#data-and-backups)) shows memory but can
 
 ## Web search
 
-The package includes a second plugin, `ds-bot/web-search`. It registers the search provider `auto`, and `cordis.patch.yml` makes it the default. Each search goes in this order:
+The package includes a second plugin, `miasaki-dsbot/web-search`. It registers the search provider `auto`, and `cordis.patch.yml` makes it the default. Each search goes in this order:
 
 1. If the profile names another `searchProvider`, that one is used.
 2. The current model route's own search, with that route's key and host. The plugin knows the Anthropic Messages, OpenAI Responses and Gemini protocols, and a few search APIs (Ollama, Kimi, Zhipu, MiMo). Add more with `searchApis`.
@@ -127,7 +127,7 @@ Each result starts with a `Search backend: …` line that names the path it took
 
 ```yaml
 - id: web-search-auto
-  name: ds-bot/web-search
+  name: miasaki-dsbot/web-search
   disabled: true
 - id: web
   name: '@deepseek-ai/dsh-web'
@@ -164,7 +164,7 @@ When a Bot needs an API key, token or password, it calls `request_secret`, and a
 - **Use**: the value goes into the Bot's shell environment as `DSH_SECRET_<NAME>` (`$DSH_SECRET_NAME` in bash, `$env:DSH_SECRET_NAME` in PowerShell). `list_secrets` lists the names a Bot can use. An MCP capability can also take `$DSH_SECRET_<NAME>` in its env, its headers and its URL (path or query); in the URL the value is URL-encoded. Use headers when the server accepts them.
 - **Masking**: before a tool result is saved and before each request goes to the model, every copy of a secret value is replaced with `[secret:<NAME>]`.
 - **Manage**: Settings → Secrets lists every secret by name, purpose, the Bot that asked and the last use. You can change who may use it, replace the value, delete it or add one. Deleting a Bot removes it from every secret.
-- **Storage**: `<DSH_HOME>/bot/secrets.json`, file mode 600, written atomically. Values are never in `state.json` or logs.
+- **Storage**: `<DSH_HOME>/miasaki-dsbot/secrets.json`, file mode 600, written atomically. Values are never in `state.json` or logs.
 
 Limits:
 
@@ -175,17 +175,17 @@ Limits:
 
 ## Data and backups
 
-The plugin saves its data in `config.home`. Without it, the folder is `$DSH_HOME/bot`, or `~/.dsh/bot` when `DSH_HOME` is not set.
+The plugin saves its data in `config.home`. Without it, the folder is `$DSH_HOME/miasaki-dsbot`, or `~/.dsh/miasaki-dsbot` when `DSH_HOME` is not set.
 
 | System | Default folder |
 |---|---|
-| Linux, macOS | `~/.dsh/bot/` |
-| Windows | `C:\Users\<user>\.dsh\bot\` |
+| Linux, macOS | `~/.dsh/miasaki-dsbot/` |
+| Windows | `C:\Users\<user>\.dsh\miasaki-dsbot\` |
 
 - To move all dsh data (Sessions, profiles and plugin data), set `DSH_HOME`.
 - To move only the plugin data, set `home` in the configuration (see [Configuration](#configuration)).
 
-Files in `bot/`:
+Files in `miasaki-dsbot/`:
 
 | File | Content |
 |---|---|
@@ -200,17 +200,17 @@ Files in `bot/`:
 | `secrets.json` | Saved secrets. Treat backups of it like passwords. |
 | `logs/diagnostics.jsonl` | Recent errors and warnings, with keys, tokens, saved secrets and the home folder removed. It moves to `diagnostics.jsonl.1` past 1 MB. Safe to delete. |
 
-The chats themselves are dsh Sessions and are not in `bot/`: they are in `~/.dsh/sessions/`. dsh keeps its workspace list in `~/.dsh/storages/workspace.json` and profiles (with model settings) in `~/.dsh/profiles/`. Bot browser logins are not saved: Desktop keeps each Bot's partition in memory only.
+The chats themselves are dsh Sessions and are not in `miasaki-dsbot/`: they are in `~/.dsh/sessions/`. dsh keeps its workspace list in `~/.dsh/storages/workspace.json` and profiles (with model settings) in `~/.dsh/profiles/`. Bot browser logins are not saved: Desktop keeps each Bot's partition in memory only.
 
 **Back up and restore**
 
 1. Quit dsh completely (both the Web server and Desktop), so `state.json` is current.
-2. Copy all of `~/.dsh/` (at least `bot/`, `sessions/` and `storages/`). A copy of `bot/` alone loses the chats.
+2. Copy all of `~/.dsh/` (at least `miasaki-dsbot/`, `sessions/` and `storages/`). A copy of `miasaki-dsbot/` alone loses the chats.
 3. To restore, quit dsh, put the folder back in the same place, then start dsh.
 
 **Move to another computer**: `state.json` has no absolute paths except the working folders you set for Bots and groups, but dsh's `storages/workspace.json` and the Session folder names contain the workspace's absolute path. If the path is the same on the new computer, copy the folder. If it is different (another user name or system), it is not yet tested whether dsh finds the old Sessions.
 
-**dsh Web and Desktop at the same time**: by default both use the same `~/.dsh`. The dsh that loads the team first takes `bot/state.lock` and can change the team. The other one is read-only: it shows the team and follows changes to the file, but refuses changes (`bot/read-only`, "open in another dsh"), and its Bots cannot start new Sessions. When the first one exits, the other one takes over on its next request. To change the team from both at once, give one of them a different `DSH_HOME` (two separate teams).
+**dsh Web and Desktop at the same time**: by default both use the same `~/.dsh`. The dsh that loads the team first takes `miasaki-dsbot/state.lock` and can change the team. The other one is read-only: it shows the team and follows changes to the file, but refuses changes (`miasaki-dsbot/read-only`, "open in another dsh"), and its Bots cannot start new Sessions. When the first one exits, the other one takes over on its next request. To change the team from both at once, give one of them a different `DSH_HOME` (two separate teams).
 
 ## Development
 

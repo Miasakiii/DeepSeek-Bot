@@ -1,6 +1,7 @@
 // DS Bot: a team of long-lived Bots on top of ordinary dsh root Sessions.
 // Every Bot is one root Session; the roster, rooms, and the bot-to-bot exchange log live
 // in one JSON file under DSH_HOME so they survive restarts without new Session event types.
+import { existsSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 import * as diagnostics from './src/host/diagnostics.js'
 import * as store from './src/host/store.js'
@@ -34,10 +35,11 @@ import * as dshUpdate from './src/host/dsh-update.js'
 import * as thinking from './src/host/thinking.js'
 import * as channel from './src/host/channel.js'
 import * as feed from './src/host/feed.js'
+import { holderLive, homeLock } from './src/host/home-lock.js'
 
 export { COLORS } from './src/host/constants.js'
 
-export const name = 'ds-bot'
+export const name = 'miasaki-dsbot'
 export const inject = ['llm', 'tools', 'systemPrompt', 'sessionController', 'sessions', 'sessionTitle', 'workspaceRegistry', 'connection']
 
 // Each module's install(rt) registers its listeners, tools, and effects, and puts on `rt`
@@ -50,9 +52,32 @@ export function apply(ctx, config = {}) {
   createRuntime(ctx, config)
 }
 
+// This plugin keeps its team in its own folder under the DSH home. A team an earlier
+// build of it, or the upstream ds-bot, left in `bot/` moves there once, before anything
+// reads the state, so an existing team opens in this one. The upstream plugin can run in
+// the same profile: while it holds the team, this one starts its own instead. A custom
+// `home` names a folder of its own and moves nothing.
+function adoptLegacyHome(dshHome, home) {
+  if (existsSync(home)) return
+  const legacy = join(dshHome, 'bot')
+  if (!existsSync(legacy)) return
+  const lock = join(legacy, 'state.lock')
+  if (holderLive(homeLock(lock).read(), lock)) {
+    console.warn(`ds-bot: the team in ${legacy} is open in another dsh, so this one keeps its own team in ${home}`)
+    return
+  }
+  try {
+    renameSync(legacy, home)
+    console.info(`ds-bot: moved the team from ${legacy} to ${home}`)
+  } catch (error) {
+    console.warn(`ds-bot: the team in ${legacy} was not moved to ${home}: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
 export function createRuntime(ctx, config = {}) {
   const dshHome = folders.dshHomeOf(process.env.DSH_HOME)
-  const home = config.home ?? join(dshHome, 'bot')
+  const home = config.home ?? join(dshHome, 'miasaki-dsbot')
+  if (config.home === undefined) adoptLegacyHome(dshHome, home)
   const rt = {
     ctx,
     config,

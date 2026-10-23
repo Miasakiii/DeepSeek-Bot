@@ -1,5 +1,5 @@
 {
-  "name": "ds-bot",
+  "name": "miasaki-dsbot",
   "version": "0.2.0",
   "description": "DS Bot: a team of long-lived Bots for DeepSeek Harness, with Main Bots, Bot-to-Bot messages and group chats",
   "keywords": [
@@ -11,13 +11,13 @@
     "multi-agent",
     "agents"
   ],
-  "homepage": "https://github.com/Fei2411/DeepSeek-Bot#readme",
+  "homepage": "https://github.com/Miasakiii/DeepSeek-Bot#readme",
   "bugs": {
-    "url": "https://github.com/Fei2411/DeepSeek-Bot/issues"
+    "url": "https://github.com/Miasakiii/DeepSeek-Bot/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Fei2411/DeepSeek-Bot.git",
+    "url": "git+https://github.com/Miasakiii/DeepSeek-Bot.git",
     "directory": "ds-bot"
   },
   "license": "Apache-2.0",

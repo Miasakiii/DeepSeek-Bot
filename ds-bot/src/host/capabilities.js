@@ -299,7 +299,7 @@ export function install(rt) {
     try {
       const plugin = item.kind === 'skill'
         ? {
-          name: `ds-bot-capability-skill-${name}`,
+          name: `miasaki-dsbot-capability-skill-${name}`,
           inject: ['skills'],
           apply(c) {
             c.effect(() => c.skills.register({ name: config.name, description: config.description, source: 'runtime', content: config.content }))

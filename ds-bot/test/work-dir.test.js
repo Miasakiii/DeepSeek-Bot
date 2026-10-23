@@ -34,7 +34,7 @@ async function start({ services = {}, workspaces = [], llm, team: saved = TEAM, 
   // The native realpath, as fs/promises uses: on Windows the JS one keeps 8.3 short names.
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'ds-bot-work-dir-')))
   const dsh = join(root, 'dsh')
-  const home = join(dsh, 'bot')
+  const home = join(dsh, 'miasaki-dsbot')
   const team = join(home, 'workspace')
   const project = join(root, 'project')
   for (const dir of [team, project]) mkdirSync(dir, { recursive: true })

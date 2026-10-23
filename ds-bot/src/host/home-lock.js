@@ -21,6 +21,19 @@ export function pidAlive(pid) {
   }
 }
 
+// Whether a lock file's holder still holds it: its process on this host, else a fresh
+// mtime. `holder` is what `homeLock(path).read()` answers: undefined for no file, null
+// for one that does not parse (being written right now).
+export function holderLive(holder, path, { staleMs = 60_000, host = hostname(), pid = process.pid, isAlive = pidAlive, now = Date.now } = {}) {
+  if (holder === undefined) return false
+  const fresh = () => {
+    try { return now() - statSync(path).mtimeMs < staleMs } catch { return false }
+  }
+  if (holder === null) return fresh()
+  if (holder.host === host) return holder.pid !== pid && isAlive(holder.pid)
+  return fresh()
+}
+
 export function homeLock(path, { staleMs = 60_000, beatMs = 15_000, host = hostname(), pid = process.pid, isAlive = pidAlive, now = Date.now } = {}) {
   const token = randomUUID()
   let timer
@@ -33,15 +46,7 @@ export function homeLock(path, { staleMs = 60_000, beatMs = 15_000, host = hostn
       return error?.code === 'ENOENT' ? undefined : null
     }
   }
-  const age = () => {
-    try { return now() - statSync(path).mtimeMs } catch { return Infinity }
-  }
-  const live = (holder) => {
-    if (holder === undefined) return false
-    if (holder === null) return age() < staleMs
-    if (holder.host === host) return holder.pid !== pid && isAlive(holder.pid)
-    return age() < staleMs
-  }
+  const live = holder => holderLive(holder, path, { staleMs, host, pid, isAlive, now })
   const owns = () => read()?.token === token
 
   const beat = () => {
