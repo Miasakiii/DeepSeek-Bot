@@ -10,8 +10,8 @@
 
 ## 最重要的规则
 
-1. **基于 DSH 构建，不改 DSH。** Bot 功能是 DSH 插件：只用 DSH 有文档的插件接口（Cordis 服务、插件客户端入口、profile patch）。桌面应用只通过 DSH 有文档的入口启动 DSH（`@deepseek-ai/dsh/profile-boot`、`dsh` 命令）。不修改 DeepSeek Harness，不依赖 DSH 安装目录里的文件。功能需要 DSH 没有提供的能力时，先在这里开 Issue；修复可能应该放在 DSH 里。
-2. **Bot 的工作跑在 DSH Session 里。** Bot 的身份不变，工作跑在 DSH Session 里：私聊一条、每个群各一条，上下文快满时换一条新的。每个回合都走 DSH 正常的 agent 循环、工具和模型路由。不要另加一套 agent 运行时。
+1. **阶段 C 之前基于 DSH 构建，不改 DSH。** 阶段 C 之前，Bot 功能是 DSH 插件：只用 DSH 有文档的插件接口（Cordis 服务、插件客户端入口、profile patch）。桌面应用只通过 DSH 有文档的入口启动 DSH（`@deepseek-ai/dsh/profile-boot`、`dsh` 命令）。阶段 C 起，按[解耦设计](docs/plans/2026-10-22-decouple-from-dsh.md)推进自有 Agent 循环与运行时，不再依赖 DSH。任何阶段都不修改 DeepSeek Harness，也不修改或依赖 DSH 安装目录里的文件。阶段 C 之前，功能需要 DSH 没有提供的能力时，先在这里开 Issue；修复可能应该放在 DSH 里。
+2. **阶段 C 之前，Bot 的工作跑在 DSH Session 里。** Bot 的身份不变，工作跑在 DSH Session 里：私聊一条、每个群各一条，上下文快满时换一条新的。每个回合都走 DSH 正常的 agent 循环、工具和模型路由。阶段 C 之前不要另加一套 agent 运行时；阶段 C 起按[解耦设计](docs/plans/2026-10-22-decouple-from-dsh.md)用自有的循环替换这套。
 3. **任何地方都不放真实密钥。** 不要提交 API key、token、cookie、`DSH_HOME` 目录、日志，或带个人信息的截图。测试和测试台用脚本化的模拟模型，不需要密钥。
 4. **只用原创素材。** 不要从其他产品或网站复制代码、文字、图标、logo 或其他图形。唯一例外是与 Apache 2.0 兼容许可的代码：注明出处，并把它的声明加进 `NOTICE` 文件。
 5. **每个改动都要测试。** 每个改动都要跑单元测试和客户端检查（见[测试改动](#测试改动)）。

@@ -8,7 +8,7 @@ CI 只跑单元测试和 Linux 上的测试台。窗口外框、输入法、高 
 
 - Windows 10 / 11 x64，或 macOS（Apple 芯片）。
 - 官方的 DSH Desktop，版本和 README 里写的一致（现在是 `0.2.1-rc.2`）。只从 DeepSeek Harness 官方渠道下载。
-- 要发的包：在 `ds-bot/` 里运行 `npm pack`，得到 `ds-bot-<版本>.tgz`。
+- 要发的包：在 `ds-bot/` 里运行 `npm pack`，得到 `miasaki-dsbot-<版本>.tgz`。
 - 桌面应用的安装包：在 `app/` 里运行 `npm run dist`，得到 `app/dist-pack/DeepSeek-Bot-<版本>-win-x64.exe`。`app/package.json` 和 `ds-bot/package.json` 的版本号要一样。
 - 也可以用发版工作流的试运行：在 GitHub 的 Actions 里选 Release → Run workflow，勾着 dry run 运行。跑完后在这次运行的页面下载 Windows 安装包和两个 Mac 的 zip（保留 7 天）。它们和 Release 里的文件在同样的 runner 上、用同样的方法打包，不发布任何东西。
 - 一个能用的模型（DeepSeek API key 或账号）。测试里要填的密钥都用**假值**。
@@ -28,15 +28,15 @@ CI 只跑单元测试和 Linux 上的测试台。窗口外框、输入法、高 
 |---|---|---|---|---|
 | 2.1 | `.tgz` | 插件 → 添加插件 → 填 `.tgz` 的完整路径（去掉引号）→ 安装 → 立即启用 | 装好；需要时提示重启 | |
 | 2.2 | `.tgz` 的路径 | 用系统「复制为路径 / 拷贝路径名」得到的路径直接填；路径里有空格、中文时也试一次 | 能装 | |
-| 2.3 | npm（发布后） | 填 `ds-bot`；再用「中国大陆镜像源」装一次 | 两种安装源都能装，版本是新版 | |
-| 2.4 | GitHub（发布后，需要 Git） | 填 `github:Fei2411/DeepSeek-Bot#v<版本>&path:/ds-bot` | 能装；没装 Git 时记下错误信息 | |
+| 2.3 | npm（发布后） | 填 `miasaki-dsbot`；再用「中国大陆镜像源」装一次 | 两种安装源都能装，版本是新版 | |
+| 2.4 | GitHub（发布后，需要 Git） | 填 `github:Miasakiii/DeepSeek-Bot#v<版本>&path:/ds-bot` | 能装；没装 Git 时记下错误信息 | |
 | 2.5 | 命令行 | 应用菜单 → 管理 dsh 命令 → 安装；退出 Desktop；新开终端运行 `dsh --version`、`dsh plugin --profile desktop add <tgz 路径>` | 能装；重启 Desktop 后生效 | |
 | 2.6 | 重启 | 完全退出（Windows：托盘图标 → 退出；macOS：⌘Q）再打开 | 团队界面出现 | |
 | 2.7 | 恢复（可选） | 故意装坏一次，看恢复对话框里的「禁用第三方插件」 | 能回到普通 DSH | |
 
 已知的坑：
 
-- 以前用 `link:` 按路径装过、之后又移动或删除了源码目录：DSH 卸载插件时不删 profile 里 `node_modules/ds-bot` 这个失效的链接，再装 `.tgz` 会报没有写入权限（详情里是 `EPERM … rename … node_modules\ds-bot`）。退出 Desktop，只删掉这个链接，再装一次。Windows：`cmd /c rmdir "%USERPROFILE%\.dsh\profiles\desktop\node_modules\ds-bot"`。这是 DSH 的问题，正常安装的用户不会遇到。
+- 以前用 `link:` 按路径装过、之后又移动或删除了源码目录：DSH 卸载插件时不删 profile 里 `node_modules/miasaki-dsbot` 这个失效的链接，再装 `.tgz` 会报没有写入权限（详情里是 `EPERM … rename … node_modules\miasaki-dsbot`）。退出 Desktop，只删掉这个链接，再装一次。Windows：`cmd /c rmdir "%USERPROFILE%\.dsh\profiles\desktop\node_modules\miasaki-dsbot"`。这是 DSH 的问题，正常安装的用户不会遇到。
 - 2.5 要用 Desktop 自己装的 `dsh`。npm 全局装的 `dsh` 改不了 Desktop 的 profile（`profile "desktop" is managed exclusively by the Electron application`）。两个都装了时，先用 `where.exe dsh`（macOS：`which -a dsh`）看用的是哪一个。
 
 ## 3. 窗口外框
@@ -104,7 +104,7 @@ CI 只跑单元测试和 Linux 上的测试台。窗口外框、输入法、高 
 | 8.3 | 让 Bot 在终端里打印这个变量（Windows：`echo $env:DSH_SECRET_TEST_TOKEN`；macOS：`echo $DSH_SECRET_TEST_TOKEN`） | 工具结果里是 `[secret:TEST_TOKEN]`，不是原值 | |
 | 8.4 | 再要一个 `TEST_PIN`，填 4 位假数字，让 Bot 打印 `pin` 加这个变量 | 能保存；结果是 `pin [secret:TEST_PIN]`；别处含这 4 位数字的长数字不受影响 | |
 | 8.5 | 设置 → Secrets | 列出 TEST_TOKEN；能改范围、换值、删除 | |
-| 8.6 | 看数据目录里的 `bot/secrets.json` 的权限（Windows：右键 → 属性 → 安全；macOS：`ls -l`） | 记下哪些用户能读 | |
+| 8.6 | 看数据目录里的 `miasaki-dsbot/secrets.json` 的权限（Windows：右键 → 属性 → 安全；macOS：`ls -l`） | 记下哪些用户能读 | |
 
 ## 9. Bot 浏览器
 
@@ -133,7 +133,7 @@ CI 只跑单元测试和 Linux 上的测试台。窗口外框、输入法、高 
 
 | # | 步骤 | 期望 | 结果 |
 |---|---|---|---|
-| 11.1 | 插件页卸载 `ds-bot`，重启 | 回到普通 DSH；数据目录里的 `bot/` 还在 | |
+| 11.1 | 插件页卸载 `miasaki-dsbot`，重启 | 回到普通 DSH；数据目录里的 `miasaki-dsbot/` 还在 | |
 | 11.2 | 重新安装 | 原来的团队、对话、记忆、密钥都在 | |
 | 11.3 | 从上一个发布版本升级到这一版 | 团队、主题、颜色、浏览器宽度和标签页都保留 | |
 

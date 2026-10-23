@@ -19,7 +19,7 @@ DeepSeek Bot（简称 DS Bot）是一个基于 [DeepSeek Harness](https://github
 
 **桌面应用（Windows、macOS）**
 
-桌面应用自带 dsh，不用先装 dsh。在 [Releases](https://github.com/Fei2411/DeepSeek-Bot/releases) 里下载：
+桌面应用自带 dsh，不用先装 dsh。在 [Releases](https://github.com/Miasakiii/DeepSeek-Bot/releases) 里下载：
 
 - Windows（x64）：`DeepSeek-Bot-<版本>-win-x64.exe`。运行它即可安装，只装给当前用户，不要管理员权限。如果提示“Windows 已保护你的电脑”，点 **更多信息** → **仍要运行**。
 - macOS：Apple 芯片下载 `DeepSeek-Bot-<版本>-mac-arm64.zip`，Intel 下载 `DeepSeek-Bot-<版本>-mac-x64.zip`。Safari 会自动解压；把 **DeepSeek Bot** 拖进 **应用程序**，再打开。如果提示无法检查这个 App，打开 **系统设置** → **隐私与安全性**，点 **仍要打开**。
@@ -33,17 +33,17 @@ DeepSeek Bot（简称 DS Bot）是一个基于 [DeepSeek Harness](https://github
 **dsh Desktop（Windows、macOS）**
 
 1. 侧栏点 **插件** → **添加插件**。
-2. **包名或地址** 填 `ds-bot`。在中国大陆，**安装源** 选 **中国大陆镜像源**。
+2. **包名或地址** 填 `miasaki-dsbot`。在中国大陆，**安装源** 选 **中国大陆镜像源**。
 3. 点 **安装**，再点 **立即启用**。如果提示“下次启动生效”，完全退出 dsh 再打开。
 
-连不上 npm 时，第 2 步也可以填 [Releases](https://github.com/Fei2411/DeepSeek-Bot/releases) 里下载的 `ds-bot-0.2.0.tgz` 的完整路径，或者 `github:Fei2411/DeepSeek-Bot#v0.2.0&path:/ds-bot`（需要装 Git）。
+连不上 npm 时，第 2 步也可以填 [Releases](https://github.com/Miasakiii/DeepSeek-Bot/releases) 里下载的 `miasaki-dsbot-0.2.0.tgz` 的完整路径，或者 `github:Miasakiii/DeepSeek-Bot#v0.2.0&path:/ds-bot`（需要装 Git）。
 
 **dsh Web（Windows、macOS、Linux）**
 
 需要 Node.js `22.19` 以上和 pnpm。
 
 ```sh
-npx @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile web add ds-bot
+npx @deepseek-ai/dsh@0.2.1-rc.2 plugin --profile web add miasaki-dsbot
 npx @deepseek-ai/dsh@0.2.1-rc.2 web
 ```
 
@@ -93,7 +93,7 @@ ds bot 拥有群聊功能。群聊是非常好的多 bot 协作方式，但它�
 
 ## 数据
 
-所有数据都在你自己的电脑上，在 dsh 主目录（默认 `~/.dsh`）的 `bot/` 和 `sessions/` 里。卸载插件不会删除这些数据。
+所有数据都在你自己的电脑上，在 dsh 主目录（默认 `~/.dsh`）的 `miasaki-dsbot/` 和 `sessions/` 里。卸载插件不会删除这些数据。
 
 ## 开发
 

@@ -4,6 +4,11 @@ All notable changes to DS Bot are listed here. The format follows [Keep a Change
 
 ## [Unreleased]
 
+### Changed
+
+- The plugin ships as the package `miasaki-dsbot` with the plugin id `miasaki-bot`, so it installs beside the upstream `ds-bot` instead of over it. The team moves from `bot/` to `miasaki-dsbot/` in the DSH home the first time this plugin opens it; when another dsh is using that team at the time, this plugin starts a team of its own instead.
+- The desktop app keeps its data in `~/.miasaki-dsbot` and takes its updates from this repository's releases. Its application id is `io.github.miasakiii.dsbot`: the first release under the new id installs beside an app built with the old one, so uninstall the old app first.
+
 ## [0.2.0] - 2026-10-21
 
 ### Added
@@ -264,7 +269,7 @@ If you used the legacy `dsh-bot` package, remove it before you install `ds-bot`.
 - Only one DSH can change a team at a time; a second DSH on the same DSH home opens it read-only ([Data and backups](ds-bot/README.md#data-and-backups)).
 - Group chats use many tokens: each member reads the group and answers in turn.
 
-[Unreleased]: https://github.com/Fei2411/DeepSeek-Bot/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Miasakiii/DeepSeek-Bot/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/Fei2411/DeepSeek-Bot/compare/v0.1.7...v0.2.0
 [0.1.7]: https://github.com/Fei2411/DeepSeek-Bot/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/Fei2411/DeepSeek-Bot/compare/v0.1.5...v0.1.6

@@ -12,10 +12,10 @@ DS Bot is a persistent team of Bots, built on [DeepSeek Harness](https://github.
 
 | Form | What it is |
 |---|---|
-| The `ds-bot` plugin | A standard DSH plugin for DSH Desktop and DSH Web. All the Bot features are here |
+| The `miasaki-dsbot` plugin | A standard DSH plugin for DSH Desktop and DSH Web. All the Bot features are here |
 | The DS Bot desktop app | Opens straight into DS Bot itself. It brings a pinned DSH, its own profile and its own data folder, imports a team the user already has in DSH, and installs DSH-compatible plugins, so that DS Bot grows its own plugin ecosystem. The plugin can still be used on its own |
 
-Both forms run the same `ds-bot` plugin. The point of the app is that DS Bot controls its own profile and interface, free of the limits of DSH's general interface and global settings (see the [DSH concessions](plans/2026-10-13-dsh-concessions.md)).
+Both forms run the same `miasaki-dsbot` plugin. The point of the app is that DS Bot controls its own profile and interface, free of the limits of DSH's general interface and global settings (see the [DSH concessions](plans/2026-10-13-dsh-concessions.md)).
 
 ## Ten core requirements
 
