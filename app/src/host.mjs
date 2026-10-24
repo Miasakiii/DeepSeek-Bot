@@ -8,7 +8,7 @@ import { inspect } from 'node:util'
 import { loadLayeredEnv, reportSkippedBundles } from '@deepseek-ai/dsh-app-boot'
 import { runProfile } from '@deepseek-ai/dsh/profile-boot'
 import { stringify } from 'yaml'
-import { CHECK_PROFILE, INSTALL_ANCHOR, loadAppProfile, loadCheckProfile, PROFILE } from './profile.mjs'
+import { CHECK_PROFILE, INSTALL_ANCHOR, loadAppProfile, loadCheckProfile, OWN_SERVICES_PATCH_NAME, ownServicesPatchRows, PROFILE } from './profile.mjs'
 import { outletPatchRows, outletUp, outletUrl, OUTLET_PATCH_NAME, OUTLET_TIMEOUT_MS } from './outlet.mjs'
 import { reconcileSearchSelector } from './search-patch.mjs'
 import { unreadableSessions } from './session-check.mjs'
@@ -34,16 +34,25 @@ const writeOutletPatch = (profileDir, outlet) => {
   return file
 }
 
+// The own window's profile mounts no web-app bundle, so the front end's services that the
+// Bot team runs on come through an overlay beside the profiles, read only through `patchFiles`.
+const writeOwnServicesPatch = (profileDir) => {
+  const file = join(dirname(profileDir), OWN_SERVICES_PATCH_NAME)
+  writeFileSync(file, stringify(ownServicesPatchRows()), 'utf8')
+  return file
+}
+
 async function main() {
   const pnpm = process.argv[2]
   const check = process.env.DS_BOT_CHECK || undefined
-  const profile = check === undefined ? loadAppProfile() : loadCheckProfile()
-  reportSkippedBundles('dsh', profile)
   // The own window's outlet, which the shell asked for: its rows go into a patch beside
-  // the profiles, read only through `patchFiles`.
+  // the profiles, read only through `patchFiles`. No outlet is the rollback window mode,
+  // in which the window rides DSH's Web front end; the profile's bundles follow that mode.
   const outlet = check === undefined ? outletFromEnv(process.env) : undefined
+  const profile = check === undefined ? loadAppProfile(outlet !== undefined) : loadCheckProfile()
+  reportSkippedBundles('dsh', profile)
   const patchFiles = [
-    ...(outlet === undefined ? [] : [writeOutletPatch(profile.dir, outlet)]),
+    ...(outlet === undefined ? [] : [writeOutletPatch(profile.dir, outlet), writeOwnServicesPatch(profile.dir)]),
     ...(check === undefined ? reconcileSearchSelector(profile) : []),
   ]
   const application = runProfile({
@@ -75,11 +84,14 @@ async function main() {
   }
   const [webServer, connection] = [ctx.get('webServer'), ctx.get('connection')]
   // The own window: the outlet answers the port the shell picked, and the launch URL
-  // carries its token once. A window that never comes up falls back to DSH's front end.
+  // carries its token once.
   if (outlet !== undefined && await outletUp(outlet.port, OUTLET_TIMEOUT_MS)) {
     await send({ type: 'ready', url: outletUrl(outlet), injections: [] })
     return
   }
+  // The own window has no front end to fall back to: this profile mounts no web server,
+  // and the outlet is the window's only way in.
+  if (outlet !== undefined) throw new Error(`The own window's outlet did not answer its port within ${String(OUTLET_TIMEOUT_MS / 1000)} seconds.`)
   // A profile patch can turn these rows off; then the window has nothing to talk to.
   if (webServer === undefined || connection === undefined) throw new Error(`The profile in ${profile.dir} does not start the engine's web server and connection.`)
   const url = connection.authenticatedUrl(`http://127.0.0.1:${String(webServer.port)}`)
