@@ -16,6 +16,7 @@ import { hostPort } from './host-port.mjs'
 import { HostProcess } from './host-process.mjs'
 import { copySessions, findTeam, importTeam, teamInUse, userDshHome } from './import.mjs'
 import { copyData, moveProblem } from './move-data.mjs'
+import { outletOrigin, outletPlan } from './outlet.mjs'
 import { CHECK_PROFILE, PROFILE } from './profile.mjs'
 import { UPDATE_TEXT, watchReleases, watchUpdates } from './updates.mjs'
 import { CAPTION_HEIGHT, cssColor, micaAvailable, nativeThemeSource } from './window-frame.mjs'
@@ -97,14 +98,21 @@ async function start() {
   if (where.quit) { app.exit(0); return }
   places = { dataDir: where.dataDir, workspace: where.workspace }
   const port = await hostPort(join(app.getPath('userData'), 'host-port.json'))
-  origin = `http://127.0.0.1:${String(port)}`
+  // The own window when its build is there: its own port, its own origin, and a token the
+  // Host hands to the plugin. DS_BOT_OWN_UI=0 keeps DSH's web front end.
+  const outlet = await outletPlan(app.getPath('userData'), join(here, '..', 'ui', 'dist'))
+  origin = outlet === undefined ? `http://127.0.0.1:${String(port)}` : outletOrigin(outlet)
   const pnpm = join(app.getAppPath(), 'node_modules', 'pnpm', 'bin', 'pnpm.mjs')
   const profileDir = join(where.dataDir, 'profiles', PROFILE)
   mkdirSync(profileDir, { recursive: true })
   const newHost = () => new HostProcess({
     entry: join(here, 'host.mjs'),
     cwd: profileDir,
-    env: { ...process.env, DSH_HOME: where.dataDir, DS_BOT_PORT: String(port), DS_BOT_APP: '1', DS_BOT_USER_DSH_HOME: userDshHome(), ...(where.workspace ? { DS_BOT_WORKSPACE: where.workspace } : {}) },
+    env: {
+      ...process.env, DSH_HOME: where.dataDir, DS_BOT_PORT: String(port), DS_BOT_APP: '1', DS_BOT_USER_DSH_HOME: userDshHome(),
+      ...(where.workspace ? { DS_BOT_WORKSPACE: where.workspace } : {}),
+      ...(outlet === undefined ? {} : { DS_BOT_OUTLET_PORT: String(outlet.port), DS_BOT_OUTLET_TOKEN: outlet.token, DS_BOT_OUTLET_ROOT: outlet.root }),
+    },
     pnpm,
     onFailure: fail,
   })
@@ -362,6 +370,8 @@ function createWindow() {
     } : {}),
     webPreferences: {
       preload: join(here, 'preload.cjs'), contextIsolation: true, sandbox: true,
+      // The Bot browsers' pages are `<webview>` guests the client creates (browser-bridge.cjs).
+      webviewTag: true,
       additionalArguments: [`--ds-bot-origin=${origin}`, ...(win32 ? [`--ds-bot-caption=${String(CAPTION_HEIGHT)}`, ...(mica ? ['--ds-bot-mica'] : [])] : [])],
     },
   })

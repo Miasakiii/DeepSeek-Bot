@@ -2,11 +2,14 @@
 // on a loopback port and reports the launch URL over IPC. With DS_BOT_CHECK, the path of a JSON list
 // of Session ids, it boots the first-run check's profile instead and reports which of them it cannot read.
 // Follows DeepSeek Harness apps/desktop-host/src/index.ts (MIT); see NOTICE.
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { inspect } from 'node:util'
 import { loadLayeredEnv, reportSkippedBundles } from '@deepseek-ai/dsh-app-boot'
 import { runProfile } from '@deepseek-ai/dsh/profile-boot'
+import { stringify } from 'yaml'
 import { CHECK_PROFILE, INSTALL_ANCHOR, loadAppProfile, loadCheckProfile, PROFILE } from './profile.mjs'
+import { outletPatchRows, outletUp, outletUrl, OUTLET_PATCH_NAME, OUTLET_TIMEOUT_MS } from './outlet.mjs'
 import { reconcileSearchSelector } from './search-patch.mjs'
 import { unreadableSessions } from './session-check.mjs'
 
@@ -17,16 +20,37 @@ const send = (message) => new Promise((resolve, reject) => {
   process.send(message, (error) => { if (error === null) resolve(); else reject(error) })
 })
 
+// The own window's outlet as the shell asked for it: a port, a token and the built UI.
+const outletFromEnv = (env) => {
+  const port = Number(env.DS_BOT_OUTLET_PORT)
+  const root = env.DS_BOT_OUTLET_ROOT ?? ''
+  if (!Number.isInteger(port) || port <= 0 || env.DS_BOT_OUTLET_TOKEN === undefined || !existsSync(join(root, 'index.html'))) return undefined
+  return { port, token: env.DS_BOT_OUTLET_TOKEN, root }
+}
+
+const writeOutletPatch = (profileDir, outlet) => {
+  const file = join(dirname(profileDir), OUTLET_PATCH_NAME)
+  writeFileSync(file, stringify(outletPatchRows(outlet)), 'utf8')
+  return file
+}
+
 async function main() {
   const pnpm = process.argv[2]
   const check = process.env.DS_BOT_CHECK || undefined
   const profile = check === undefined ? loadAppProfile() : loadCheckProfile()
   reportSkippedBundles('dsh', profile)
+  // The own window's outlet, which the shell asked for: its rows go into a patch beside
+  // the profiles, read only through `patchFiles`.
+  const outlet = check === undefined ? outletFromEnv(process.env) : undefined
+  const patchFiles = [
+    ...(outlet === undefined ? [] : [writeOutletPatch(profile.dir, outlet)]),
+    ...(check === undefined ? reconcileSearchSelector(profile) : []),
+  ]
   const application = runProfile({
     environment: loadLayeredEnv('dsh'),
     profile: check === undefined ? PROFILE : CHECK_PROFILE,
     resolvedProfile: { profile, installAnchor: INSTALL_ANCHOR },
-    patchFiles: check === undefined ? reconcileSearchSelector(profile) : [],
+    patchFiles,
     args: ['--no-open', '--port', process.env.DS_BOT_PORT || '0'],
     ...(pnpm === undefined ? {} : {
       packageManager: { command: process.execPath, args: ['--expose-internals', pnpm], env: { ELECTRON_RUN_AS_NODE: '1' } },
@@ -50,6 +74,12 @@ async function main() {
     return
   }
   const [webServer, connection] = [ctx.get('webServer'), ctx.get('connection')]
+  // The own window: the outlet answers the port the shell picked, and the launch URL
+  // carries its token once. A window that never comes up falls back to DSH's front end.
+  if (outlet !== undefined && await outletUp(outlet.port, OUTLET_TIMEOUT_MS)) {
+    await send({ type: 'ready', url: outletUrl(outlet), injections: [] })
+    return
+  }
   // A profile patch can turn these rows off; then the window has nothing to talk to.
   if (webServer === undefined || connection === undefined) throw new Error(`The profile in ${profile.dir} does not start the engine's web server and connection.`)
   const url = connection.authenticatedUrl(`http://127.0.0.1:${String(webServer.port)}`)

@@ -1,5 +1,6 @@
 import { createElement as h } from 'react'
 import { createRoot } from 'react-dom/client'
+import { adoptToken } from './api.js'
 import { ABOUT_CSS } from '../../../ds-bot/src/client/about.js'
 import { BOT_SETTINGS_CSS } from '../../../ds-bot/src/client/bot-settings.js'
 import { FEEDBACK_CSS } from '../../../ds-bot/src/client/feedback.js'
@@ -20,6 +21,8 @@ import './app.css'
 
 installLocale(createLocale(navigator.language))
 document.documentElement.lang = navigator.language
+// The outlet's token, before anything talks to it: it leaves the address bar at once.
+adoptToken()
 // macOS puts the window buttons at the band's left end, over the sidebar (app.css).
 if (/mac/iu.test(navigator.userAgentData?.platform ?? navigator.platform)) document.documentElement.dataset.mac = ''
 

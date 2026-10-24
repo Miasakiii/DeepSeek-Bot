@@ -8,6 +8,9 @@ files:
   - package.json
   - src/**
   - assets/**
+# The own window (phase B1 of the decouple plan): the app's UI, built by `npm run build`
+# into ui/dist, which the plugin's own HTTP outlet serves.
+  - ui/dist/**
 # The Host runs pnpm as a separate Node process to install plugins, so it must be a plain file.
 asarUnpack:
   - node_modules/pnpm/**
