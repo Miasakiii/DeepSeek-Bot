@@ -370,7 +370,8 @@ function createWindow() {
     } : {}),
     webPreferences: {
       preload: join(here, 'preload.cjs'), contextIsolation: true, sandbox: true,
-      // The Bot browsers' pages are `<webview>` guests the client creates (browser-bridge.cjs).
+      // The Bot browsers' pages are `<webview>` guests the client creates (its
+      // browser-bridge.js, self-provided in this window).
       webviewTag: true,
       additionalArguments: [`--ds-bot-origin=${origin}`, ...(win32 ? [`--ds-bot-caption=${String(CAPTION_HEIGHT)}`, ...(mica ? ['--ds-bot-mica'] : [])] : [])],
     },
@@ -396,6 +397,14 @@ function createWindow() {
     if (url === 'about:blank') return { action: 'allow', overrideBrowserWindowOptions: { show: false, webPreferences: { sandbox: true } } }
     openOutside(url)
     return { action: 'deny' }
+  })
+  // A Bot's browser guest reads pages the user steered it to; it asks for nothing of the
+  // machine's own, so every permission is refused in the guests. The window itself keeps
+  // Electron's default, which its dictation microphone needs. Guests navigate freely:
+  // the client already keeps them on http(s) and off cloud metadata addresses.
+  app.on('web-contents-created', (_event, guest) => {
+    if (guest === contents) return
+    guest.setPermissionRequestHandler((_request, callback) => callback(false))
   })
   contents.on('did-create-window', (child) => {
     const away = (event, url) => {

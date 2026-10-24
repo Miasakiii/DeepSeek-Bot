@@ -15266,6 +15266,53 @@ function serveBrowserReads({ browsers, post, clientId = globalThis.crypto.random
   };
 }
 
+// src/client/browser-bridge.js
+var PARTITION_PREFIX = "persist:bot-";
+var safeKey = (key) => String(key ?? "").replace(/[^\w.-]+/g, "_").slice(0, 64) || "unknown";
+function createBrowserBridge({ document: doc, randomId = () => Math.random().toString(36).slice(2) } = {}) {
+  const listeners2 = /* @__PURE__ */ new Map();
+  let serial = 0;
+  const hear = (event) => {
+    const target = event.target;
+    const lease = target != null && typeof target.getAttribute === "function" ? target.getAttribute("name") : null;
+    const listener = lease === null ? void 0 : listeners2.get(lease);
+    if (listener === void 0) return;
+    event.preventDefault();
+    listener(String(event.url ?? ""));
+  };
+  if (doc !== void 0) doc.addEventListener("new-window", hear, true);
+  return {
+    protocolVersion: 1,
+    browser: {
+      /**
+       * One guest's lease and storage partition for `key` (the Bot's id).
+       * @returns {Promise<{lease: string, partition: string}>}
+       */
+      async acquire(key) {
+        return { lease: `lease-${++serial}-${randomId()}`, partition: `${PARTITION_PREFIX}${safeKey(key)}` };
+      },
+      /** A guest goes away with its element; nothing is left to release. */
+      async release() {
+      },
+      /**
+       * Hear the pages this lease's guest asks to open. The page turns each one into a
+       * new tab of the same Bot.
+       * @returns {() => void} stops listening
+       */
+      onOpenRequested(lease, listener) {
+        listeners2.set(String(lease), listener);
+        return () => listeners2.delete(String(lease));
+      }
+    }
+  };
+}
+function installOwnBrowserBridge(scope) {
+  const w = scope ?? globalThis.window;
+  if (w === void 0 || w.dshDesktop !== void 0 || w.dsBotApp === void 0) return void 0;
+  w.dshDesktop = createBrowserBridge({ document: w.document });
+  return w.dshDesktop;
+}
+
 // src/client/user-message.js
 var import_react39 = require("react");
 var ui = __toESM(require("@deepseek-ai/dsh-client-ui-primitives"), 1);
@@ -15654,6 +15701,7 @@ function apply(ctx) {
       };
     }, "ds-bot: app update status");
   }
+  installOwnBrowserBridge(window);
   const bridge = window.dshDesktop?.protocolVersion === 1 ? window.dshDesktop.browser ?? null : null;
   const browsers = bridge ? createBotBrowsers({ bridge, createSource }) : null;
   if (browsers) {

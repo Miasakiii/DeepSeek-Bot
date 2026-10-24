@@ -4,13 +4,9 @@
 // but without data-platform: that puts DSH's shortcuts on native menu input, which this
 // window does not have.
 const { contextBridge, ipcRenderer } = require('electron')
-const { createBrowserBridge } = require('./browser-bridge.cjs')
 
 const host = process.argv.find(value => value.startsWith('--ds-bot-origin='))?.slice('--ds-bot-origin='.length)
 if (host !== undefined && location.origin === host) {
-  // The Bot browsers' bridge, as DSH Desktop's preload gives the plugin's client one: the
-  // page creates the `<webview>` guests, this side only mints their leases and partitions.
-  contextBridge.exposeInMainWorld('dshDesktop', createBrowserBridge({ document }))
   // DS Bot's settings show and move the app's data location through this.
   contextBridge.exposeInMainWorld('dsBotApp', {
     dataLocation: () => ipcRenderer.invoke('ds-bot:data-location'),

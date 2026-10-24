@@ -19,6 +19,7 @@ import { installHeaderNavigation } from './header-navigation.js'
 import { AssistantCell, TriggerCell, TurnProcessCell, Nothing, TurnTailCell, ToolCell } from './cells.js'
 import { Overlays } from './overlays.js'
 import { createBotBrowsers, serveBrowserReads } from './bot-browsers.js'
+import { installOwnBrowserBridge } from './browser-bridge.js'
 import { BROWSER_CSS } from './browser-pane.js'
 import { SECRET_CSS, SecretDock } from './secret-card.js'
 import { MODEL_CSS, ModelChoiceDock, DeepSeekSignIn } from './model-menu.js'
@@ -227,7 +228,9 @@ export function apply(ctx) {
   }
 
   // Bot browsers need the Desktop shell's webview bridge, and the host serves
-  // read_browser only in the Desktop profile (`browser` in the state).
+  // read_browser only in the Desktop profile (`browser` in the state). The desktop
+  // app's own window has no shell bridge, so the page provides one there first.
+  installOwnBrowserBridge(window)
   const bridge = window.dshDesktop?.protocolVersion === 1 ? window.dshDesktop.browser ?? null : null
   const browsers = bridge ? createBotBrowsers({ bridge, createSource }) : null
   if (browsers) {
