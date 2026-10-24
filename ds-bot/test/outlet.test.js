@@ -114,6 +114,13 @@ test('the outlet serves the window files it is pointed at, and nothing outside t
   assert.equal(index.status, 200)
   assert.match(index.headers.get('content-type'), /text\/html/)
   assert.match(await index.text(), /own window/)
+  // The document a window opens with its token is its first answer; the page's own asset
+  // requests ride the session it starts, with no token of their own.
+  const jar = index.headers.getSetCookie().map(part => part.split(';')[0])
+  assert.match(jar[0] ?? '', /^dsbot-outlet=/)
+  const riding = await fetch(`${base}/assets/app.js`, { headers: { cookie: jar.join('; ') } })
+  assert.equal(riding.status, 200)
+  assert.equal(await riding.text(), 'console.log(1)')
   const script = await fetch(`${base}/assets/app.js?token=${token}`)
   assert.equal(script.status, 200)
   assert.match(script.headers.get('content-type'), /javascript/)

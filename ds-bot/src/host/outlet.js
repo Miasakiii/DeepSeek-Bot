@@ -123,7 +123,9 @@ export function install(rt) {
       json(res, 404, { ok: false, error: { code: 'bot/not-found', message: 'No such file' } })
       return
     }
-    res.writeHead(200, { 'content-type': guessType(target), 'content-length': info.size })
+    // The document a window opens with its token is its first answer; the session that
+    // answer starts is what the page's own asset requests then ride.
+    res.writeHead(200, { 'content-type': guessType(target), 'content-length': info.size, 'set-cookie': cookie() })
     createReadStream(target).pipe(res)
   }
 
