@@ -4,8 +4,11 @@ import { Bubbles, ChatRows, Shimmer } from '../../../ds-bot/src/client/cells.js'
 import { ComposerPlus, ComposerVoice } from '../../../ds-bot/src/client/composer.js'
 import { t } from '../../../ds-bot/src/client/i18n.js'
 import { ArrowUpIcon } from '../../../ds-bot/src/client/icons.js'
+import { MemberDock } from '../../../ds-bot/src/client/member-status.js'
 import { ModelChoiceDock } from '../../../ds-bot/src/client/model-menu.js'
 import { PendingQuestion } from '../../../ds-bot/src/client/questions.js'
+import { SecretDock } from '../../../ds-bot/src/client/secret-card.js'
+import { WidgetDock } from '../../../ds-bot/src/client/widget-cell.js'
 
 // The chat follows its end while the user is this close to it.
 const FOLLOW_PX = 80
@@ -147,6 +150,25 @@ function Composer({ sessionId, placeholder, disabled, onSend, actions, useUi, us
         h('button', { type: 'button', className: 'dsb-send', disabled: disabled || text.trim() === '', 'aria-label': t('Send message'), title: t('Send message'), onClick: () => { void submit() } }, h(ArrowUpIcon)))))
 }
 
+// One turn per trigger entry — the user's message, an event from another Bot, an
+// answer — with the Bot's replies that follow it, keyed by the trigger's time: a
+// time cannot move when a page is prepended, an index can. The plugin's cells note
+// the same facts from DSH's transcript; here the chat entries carry them.
+function turnsOf(items) {
+  const turns = []
+  for (const item of items) {
+    if (item.kind === 'divider' || !Number.isFinite(item.time)) continue
+    const last = turns.at(-1)
+    if (item.kind === 'bot' && last?.kind === 'bot') {
+      last.end = item.time
+      if (item.text) last.response = item.text
+      continue
+    }
+    turns.push({ kind: item.kind, turn: item.time, first: item.time, end: item.time, ...(item.kind === 'user' && item.text ? { prompt: item.text } : {}), ...(item.kind === 'bot' && item.text ? { response: item.text } : {}) })
+  }
+  return turns
+}
+
 // One conversation in the main view, drawn with the Bot views' own rows, cards and docks.
 export function Chat({ sessionId, team }) {
   const { actions, hooks, chat: feed } = team
@@ -155,9 +177,12 @@ export function Chat({ sessionId, team }) {
   const name = bot?.name ?? roster.roomsById[sessionId]?.name ?? ''
   const { view, stream, pending, load, send, keep } = useChat(bot?.id, sessionId, feed)
   const scroller = useRef(null)
+  const composerRoot = useRef(null)
   const follow = useRef(true)
+  const [atEnd, setAtEnd] = useState(true)
   const question = roster.questions?.[sessionId]
   const running = hooks.useSessionStatus(map => map.get(sessionId)?.running === true)
+  const visit = hooks.useUi(state => state.visits?.[sessionId])
 
   useLayoutEffect(() => {
     const node = scroller.current
@@ -170,25 +195,77 @@ export function Chat({ sessionId, team }) {
   const onScroll = () => {
     const node = scroller.current
     follow.current = node.scrollHeight - node.scrollTop - node.clientHeight < FOLLOW_PX
+    setAtEnd(follow.current)
   }
+
+  // The new-message pills (header.js) place themselves over the composer through this
+  // height, the way DSH's own composer publishes it.
+  useLayoutEffect(() => {
+    const pane = scroller.current
+    const node = composerRoot.current
+    if (!pane || !node || typeof ResizeObserver !== 'function') return
+    const apply = () => pane.style.setProperty('--dsh-composer-height', `${node.offsetHeight}px`)
+    apply()
+    const observer = new ResizeObserver(apply)
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
+
+  // The turns drive the turn clock (the "New" divider's pills) and the outline the
+  // views read where DSH keeps its projections (the sidebar preview, the reply count).
+  const turns = useMemo(() => turnsOf(view.items), [view.items])
+  useEffect(() => {
+    for (const turn of turns) {
+      actions.noteTurnTime(sessionId, turn.turn, 'first', turn.first)
+      actions.noteTurnTime(sessionId, turn.turn, 'end', turn.end)
+    }
+  }, [sessionId, turns, actions])
+  useEffect(() => {
+    actions.noteOutline(sessionId, turns.map(({ turn, prompt, response }) => ({ turn, ...(prompt ? { prompt } : {}), ...(response ? { response } : {}) })))
+  }, [sessionId, turns, actions])
+
+  // The entries that arrived between two visits start under the "New" divider; a turn
+  // that began before the visit keeps its replies with it.
+  const freshAt = useMemo(() => {
+    if (typeof visit?.seen !== 'number' || typeof visit.entered !== 'number') return null
+    const at = view.items.findIndex(item => Number.isFinite(item.time) && item.time > visit.seen && item.time <= visit.entered)
+    if (at < 0) return null
+    let start = at
+    while (start > 0 && view.items[start - 1].kind === 'bot' && view.items[start].kind === 'bot') start -= 1
+    return start
+  }, [view.items, visit])
+
   const earlier = view.loading && view.sessionId !== null ? h(Shimmer, null, t('Loading earlier messages…'))
     : view.failed ? h('button', { type: 'button', className: 'bt-soft', onClick: () => load(view.cursor ?? undefined, scroller.current) }, t('Couldn’t load earlier messages · Retry'))
       : view.cursor ? h('button', { type: 'button', className: 'bt-soft', onClick: () => load(view.cursor, scroller.current) }, t('Load earlier')) : null
   const waiting = bot?.waiting === true
+  const rows = (items, key) => h(ChatRows, { key, items, sessionId, roster, actions, useUi: hooks.useUi, clock: true })
+  const read = freshAt === null ? [rows(view.items, 'read')]
+    : [rows(view.items.slice(0, freshAt), 'read'),
+        h('div', { key: 'new-sep', className: 'bt-new-sep', role: 'separator', 'aria-label': t('New messages') }, h('span', null, t('New'))),
+        rows(view.items.slice(freshAt), 'fresh')]
+  const toBottom = () => scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' })
 
   return h('div', { className: 'dsb-chat' },
     h('div', { ref: scroller, className: 'dsb-scroll', 'data-conversation-scroll': '', onScroll },
       h('div', { className: 'dsb-column' },
         earlier ? h('div', { className: 'bt-earlier-top' }, earlier) : null,
         h('div', { className: 'dsb-flow', 'data-chat-flow': '', role: 'feed', 'aria-label': name, 'aria-busy': view.loading },
-          h(ChatRows, { items: view.items, sessionId, roster, actions, useUi: hooks.useUi, clock: true }),
+          read,
           pending.length ? h('div', { className: 'dsb-pending' }, h(ChatRows, { items: pending, sessionId, roster, actions })) : null,
           stream?.text ? h(Bubbles, { texts: [stream.text], roster, selfId: bot?.id, actions, streaming: true, sessionId }) : null,
           // The Bot views' activity row (from the header pill) draws itself in here.
           h('div', { 'data-chat-running': '' }),
-          question ? h(PendingQuestion, { key: JSON.stringify([sessionId, question.id]), sessionId, question, actions, inline: true }) : null))),
-    h('div', { className: 'dsb-composer-root' },
+          question ? h(PendingQuestion, { key: JSON.stringify([sessionId, question.id]), sessionId, question, actions, inline: true }) : null)),
+      // The window's stand-in for DSH's Back-to-bottom slot: the new-message pills
+      // read its button to know the view sits off the end, and jump through it.
+      atEnd ? null : h('div', { className: 'dsb_toBottomSlot' },
+        h('button', { type: 'button', 'aria-label': t('Back to bottom'), title: t('Back to bottom'), onClick: toBottom }))),
+    h('div', { ref: composerRoot, className: 'dsb-composer-root' },
+      h(MemberDock, { sessionId, useRoster: hooks.useRoster, useWork: hooks.useWork, actions }),
       h(ModelChoiceDock, { sessionId, useRoster: hooks.useRoster, actions }),
+      h(WidgetDock, { sessionId, useRoster: hooks.useRoster, useCards: hooks.useCards, useHeldCards: hooks.useHeldCards, actions }),
+      h(SecretDock, { sessionId, useRoster: hooks.useRoster, useCards: hooks.useCards, useHeldCards: hooks.useHeldCards, actions }),
       h(Composer, {
         sessionId,
         disabled: waiting,

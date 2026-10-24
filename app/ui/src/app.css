@@ -55,6 +55,13 @@ html[data-mac] .dsb-frame .dsb-side{padding-top:var(--dsb-band)}
 .dsb-pending{display:contents}
 .dsb-pending .bt-ububble{opacity:.6}
 
+/* The window's stand-in for DSH's Back-to-bottom slot. The new-message pills the
+   header carries (header.js) read its button to know the view sits off the end, hide
+   it while they show, and jump through it; the conversation CSS sizes and paints the
+   button itself. */
+.dsb-scroll{position:relative}
+.dsb_toBottomSlot{position:absolute;left:0;right:0;bottom:8px;height:0;display:flex;justify-content:center}
+
 .dsb-composer-root{display:flex;flex-direction:column;align-items:center;padding:0 11px 13px 16px}
 .dsb-composer-wrap{width:100%;max-width:min(992px,100%)}
 .dsb-composer{position:relative}
