@@ -5,11 +5,27 @@ const ROUTE = 'api/bot'
 // Refusals carry a message meant for the user, who sees it where they acted.
 const REFUSALS = new Set(['bot/refused', 'bot/invalid', 'bot/read-only', 'bot/not-found', 'bot/browser-off'])
 
+// The own window (the desktop app's own UI, over the plugin's own HTTP outlet) launches
+// with the outlet's token in its URL. The token is taken once, leaves the address bar,
+// and rides with every request until the outlet answers with its session cookie. A window
+// that launches without one — DSH's own web form — carries nothing, so this changes
+// nothing there.
+let token = ''
+export const adoptToken = (fromLocation = globalThis.location) => {
+  token = new URLSearchParams(fromLocation.search).get('token') ?? ''
+  if (token === '') return ''
+  const clean = new URL(fromLocation.href)
+  clean.searchParams.delete('token')
+  fromLocation.history?.replaceState?.({}, '', clean)
+}
+const withToken = url => (token === '' ? url : `${url}${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`)
+export { withToken }
+
 export const call = async (endpoint, payload, signal) => {
   let response
   try {
     // Document-relative so the Web UI keeps working under a mounted base path.
-    response = await fetch(ROUTE, {
+    response = await fetch(withToken(ROUTE), {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'content-type': 'application/json' },

@@ -1161,10 +1161,19 @@ ${REST_NOTE}`);
 // src/client/api.js
 var ROUTE = "api/bot";
 var REFUSALS = /* @__PURE__ */ new Set(["bot/refused", "bot/invalid", "bot/read-only", "bot/not-found", "bot/browser-off"]);
+var token = "";
+var adoptToken = (fromLocation = globalThis.location) => {
+  token = new URLSearchParams(fromLocation.search).get("token") ?? "";
+  if (token === "") return "";
+  const clean = new URL(fromLocation.href);
+  clean.searchParams.delete("token");
+  fromLocation.history?.replaceState?.({}, "", clean);
+};
+var withToken = (url) => token === "" ? url : `${url}${url.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
 var call = async (endpoint, payload, signal) => {
   let response;
   try {
-    response = await fetch(ROUTE, {
+    response = await fetch(withToken(ROUTE), {
       method: "POST",
       credentials: "same-origin",
       headers: { "content-type": "application/json" },
@@ -1404,8 +1413,8 @@ function teamActions({ call: call2, after, partFor, roster, ui: ui2, live, cards
       ui2.set((state) => ({ ...state, palette: { query, token: Date.now() }, newChat: null, menu: null }));
     },
     // The token keeps a late exit timer from closing a palette opened again since.
-    closePalette: (token) => {
-      ui2.set((state) => state.palette && (token === void 0 || state.palette.token === token) ? { ...state, palette: null } : state);
+    closePalette: (token2) => {
+      ui2.set((state) => state.palette && (token2 === void 0 || state.palette.token === token2) ? { ...state, palette: null } : state);
     },
     openExchange: (a, b) => {
       if (a && b) ui2.set((state) => ({ ...state, exchange: [a, b] }));
@@ -1462,7 +1471,7 @@ function teamActions({ call: call2, after, partFor, roster, ui: ui2, live, cards
       ui2.set((state) => state.details ? { ...state, details: null, view: "details", renaming: false, tab: null } : state);
     },
     quote: (sessionId, text) => ui2.set((state) => ({ ...state, quote: { sessionId, text, token: Date.now() } })),
-    clearQuote: (token) => ui2.set((state) => state.quote?.token === token ? { ...state, quote: null } : state),
+    clearQuote: (token2) => ui2.set((state) => state.quote?.token === token2 ? { ...state, quote: null } : state),
     setFlags: (id, flags) => after(call2("set-flags", { id, ...flags })),
     deleteRoom: (id) => after(call2("delete-room", { id })),
     openMenu: (menu) => {
@@ -1503,7 +1512,7 @@ function teamActions({ call: call2, after, partFor, roster, ui: ui2, live, cards
     secretCancel: (requestId) => after(call2("secret-cancel", { requestId })),
     secretUpdate: (name, { scope, purpose } = {}) => after(call2("secret-update", { name, scope, purpose })),
     secretDelete: (name) => after(call2("secret-delete", { name })),
-    connectorConnect: (id, token) => after(call2("connector-connect", { id, token })),
+    connectorConnect: (id, token2) => after(call2("connector-connect", { id, token: token2 })),
     connectorDisconnect: (id) => after(call2("connector-disconnect", { id })),
     connectorRetry: (id) => after(call2("connector-retry", { id })),
     saveCapability: (capability) => after(call2("capability-save", capability)),
@@ -1533,7 +1542,7 @@ function teamActions({ call: call2, after, partFor, roster, ui: ui2, live, cards
       noteClientError(where, error);
       ui2.set((state) => ({ ...state, toast: { text: error?.message ?? String(error), token: Date.now() } }));
     },
-    dismissToast: (token) => ui2.set((state) => state.toast && (token === void 0 || state.toast.token === token) ? { ...state, toast: null } : state),
+    dismissToast: (token2) => ui2.set((state) => state.toast && (token2 === void 0 || state.toast.token === token2) ? { ...state, toast: null } : state),
     noteTurnTime: (sessionId, turn, key, time) => {
       if (sessionId === void 0 || !Number.isFinite(turn) || !Number.isFinite(time)) return;
       turnClock.set((state) => {
@@ -7815,7 +7824,7 @@ function usePaneLeft() {
 // src/client/palette.js
 var import_react15 = require("react");
 var PALETTE_EXIT_MS = 160;
-function CommandPalette({ start, token, roster, actions, useSessions }) {
+function CommandPalette({ start, token: token2, roster, actions, useSessions }) {
   const [query, setQuery] = (0, import_react15.useState)(start ?? "");
   const [cursor, setCursor] = (0, import_react15.useState)(0);
   const [leaving, setLeaving] = (0, import_react15.useState)(false);
@@ -7823,7 +7832,7 @@ function CommandPalette({ start, token, roster, actions, useSessions }) {
   const close = () => {
     if (leaving) return;
     setLeaving(true);
-    setTimeout(() => actions.closePalette(token), PALETTE_EXIT_MS);
+    setTimeout(() => actions.closePalette(token2), PALETTE_EXIT_MS);
   };
   useEscape(close);
   const ids = [...roster.bots.map(currentPart), ...roster.rooms.map((item) => item.id)];
@@ -12021,7 +12030,7 @@ function statusText2(connector) {
 }
 function ConnectorRow({ connector, actions }) {
   const [form, setForm] = (0, import_react29.useState)(false);
-  const [token, setToken] = (0, import_react29.useState)("");
+  const [token2, setToken] = (0, import_react29.useState)("");
   const [busy, setBusy] = (0, import_react29.useState)(false);
   const [error, setError] = (0, import_react29.useState)(null);
   const run = (task, after) => {
@@ -12032,8 +12041,8 @@ function ConnectorRow({ connector, actions }) {
     }, (failure) => setError(failure?.message ?? String(failure))).finally(() => setBusy(false));
   };
   const connect = () => {
-    if (busy || token.trim() === "") return;
-    void run(actions.connectorConnect(connector.id, token), () => {
+    if (busy || token2.trim() === "") return;
+    void run(actions.connectorConnect(connector.id, token2), () => {
       setToken("");
       setForm(false);
     });
@@ -12065,7 +12074,7 @@ function ConnectorRow({ connector, actions }) {
     !on && form ? (0, import_react29.createElement)(
       "div",
       { className: "bt-connector-form" },
-      (0, import_react29.createElement)("label", { className: "bt-q-field bt-secret-field" }, (0, import_react29.createElement)(MaskedInput, { value: token, onChange: setToken, onEnter: connect, label: t("GitHub token"), autoFocus: true })),
+      (0, import_react29.createElement)("label", { className: "bt-q-field bt-secret-field" }, (0, import_react29.createElement)(MaskedInput, { value: token2, onChange: setToken, onEnter: connect, label: t("GitHub token"), autoFocus: true })),
       (0, import_react29.createElement)(
         "div",
         { className: "bt-connector-form-row" },
@@ -12075,7 +12084,7 @@ function ConnectorRow({ connector, actions }) {
           setToken("");
           setError(null);
         } }, t("Cancel")),
-        (0, import_react29.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy || token.trim() === "", onClick: connect }, busy ? t("Connecting…") : t("Connect"))
+        (0, import_react29.createElement)("button", { type: "button", className: "bt-soft bt-soft-sm", disabled: busy || token2.trim() === "", onClick: connect }, busy ? t("Connecting…") : t("Connect"))
       )
     ) : null,
     error ? (0, import_react29.createElement)("div", { className: "bt-connector-error", role: "alert" }, error) : null
@@ -15963,6 +15972,12 @@ function apply(ctx) {
   actions.speech = () => ctx.get("remote.speech") ?? void 0;
   actions.openHarnessSettings = openHarnessSettings;
   actions.openHarnessOnboarding = openHarnessOnboarding;
+  actions.providers = () => call("providers");
+  actions.setProviderKey = (provider, value) => after(call("provider-key", { provider, value }));
+  actions.addProvider = (body) => after(call("provider-add", body));
+  actions.providerModels = (body) => call("provider-models", body);
+  actions.removeProvider = (provider) => after(call("provider-remove", { provider }));
+  actions.openModels = () => actions.openSettings("models");
   actions.voiceSetup = () => {
     const navigation = ctx.get("pluginNavigation");
     return navigation ? () => navigation.openBundle(VOICE_BUNDLE) : null;

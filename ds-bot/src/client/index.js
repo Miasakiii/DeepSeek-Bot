@@ -537,6 +537,17 @@ export function apply(ctx) {
   // DSH's own settings: models, providers, keys and its plugins.
   actions.openHarnessSettings = openHarnessSettings
   actions.openHarnessOnboarding = openHarnessOnboarding
+  // The window's own Models page: the providers DS Bot serves, their keys and their
+  // models, on the plugin's own endpoints. A window that also has DSH's settings keeps
+  // its Harness settings row beside this page, and the model menu's "Models and
+  // providers…" opens it. The mutating calls pull the team afterwards, so a model the
+  // change makes available reaches the pickers at once.
+  actions.providers = () => call('providers')
+  actions.setProviderKey = (provider, value) => after(call('provider-key', { provider, value }))
+  actions.addProvider = body => after(call('provider-add', body))
+  actions.providerModels = body => call('provider-models', body)
+  actions.removeProvider = provider => after(call('provider-remove', { provider }))
+  actions.openModels = () => actions.openSettings('models')
   actions.voiceSetup = () => {
     const navigation = ctx.get('pluginNavigation')
     return navigation ? () => navigation.openBundle(VOICE_BUNDLE) : null

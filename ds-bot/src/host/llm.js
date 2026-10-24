@@ -1,14 +1,18 @@
-// Phase A of the decouple plan (docs/plans/2026-10-22-decouple-from-dsh.md): the provider
-// directory entries, the key vault and the three provider wire clients that DS Bot's own
-// LLM adapter will serve on. Nothing here imports DSH and nothing installs it yet — the
-// adapter class, the registerAdapter wiring and the request serialization land with the
-// rest of phase A, so the running plugin does not change behavior in the meantime.
+// Phase A of the decouple plan (docs/plans/2026-10-22-decouple-from-dsh.md): DS Bot's own
+// LLM layer behind the documented plugin API — the provider directory in the plugin's own
+// state, the AES-256-GCM key vault, the three wire clients, and the adapter that serves
+// them through `ctx.llm.registerAdapter`. DSH keeps running the turn loop; only the
+// provider side of a model call moves to this module.
 
 import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { chmod, mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { PROTOCOLS, keyRefFor } from './providers.js'
+import { LlmAdapter, LlmError, assertUsableApiKey, attributionHeaders, fileHandleText } from '@deepseek-ai/dsh-llm'
+import { PROTOCOLS, checkKey, keyRefFor } from './providers.js'
 import { replaceFile } from './files.js'
+
+const PKG = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'))
 
 // The wire vocabulary of dsh-llm's StreamChunk, which the phase A adapter has to produce:
 // block-start / text-delta / reasoning-delta / tool-call-delta / block-end / usage / finish.
@@ -453,4 +457,399 @@ export async function* streamWire({ protocol, baseURL, apiKey, body, signal, att
   }
   if (response.body === null) throw wireFailure('server', 'the provider sent no body')
   yield* PARSERS[protocol](sseEvents(response.body))
+}
+
+// The models an endpoint reports about itself: GET {baseURL}/models under the route's
+// own auth, in the OpenAI-compatible listing shape (`data[]`, or Ollama's `models[]`).
+// A key typed for the question goes with it and is not stored.
+export async function discoverWireModels({ protocol, baseURL, apiKey, signal, fetchImpl = fetch }) {
+  if (!PROTOCOLS.includes(protocol)) throw invalid(`The protocol is one of: ${PROTOCOLS.join(', ')}`)
+  const request = wireRequest({ protocol, baseURL, apiKey, attribution: attributionHeaders() })
+  let response
+  try {
+    response = await fetchImpl(`${checkEndpoint(baseURL)}/models`, { headers: request.headers, signal })
+  } catch (error) {
+    if (signal?.aborted || error?.name === 'AbortError' || error?.name === 'TimeoutError') throw wireFailure('timeout', 'the provider did not answer in time')
+    throw wireFailure('network', `could not reach the provider: ${error?.message ?? 'network error'}`)
+  }
+  if (!response.ok) throw classifyStatus(response.status, `the provider answered ${response.status}`)
+  const parsed = await response.json().catch(() => undefined)
+  const listed = Array.isArray(parsed?.data) ? parsed.data : Array.isArray(parsed?.models) ? parsed.models : []
+  const seen = new Set()
+  const models = []
+  for (const entry of listed) {
+    const id = typeof entry === 'string' ? entry : typeof entry?.id === 'string' ? entry.id : typeof entry?.name === 'string' ? entry.name : ''
+    if (id === '' || seen.has(id)) continue
+    seen.add(id)
+    models.push({ id, ...(typeof entry?.name === 'string' && entry.name !== '' ? { name: entry.name } : {}) })
+  }
+  return models
+}
+
+// ---- request serialization ----
+
+// The text of a message's content, in block order. Reasoning is model-internal and is
+// never replayed to a provider.
+const blocksText = content => (typeof content === 'string' ? content
+  : Array.isArray(content) ? content.filter(block => block?.type === 'text').map(block => block.text).join('\n') : '')
+
+// The tool calls an assistant message asked for, in order.
+const toolCallsOf = content => (Array.isArray(content) ? content.filter(block => block?.type === 'tool-call') : [])
+
+// The system slot: a one-shot caller's own `system`, plus the leading system message of
+// a loop-built history. Developer messages carry tool updates, which a route that
+// declares none never reads, so they are dropped here and the complete current tool
+// list goes out with every request.
+const systemTextOf = options => [
+  ...(typeof options.system === 'string' && options.system !== '' ? [options.system] : []),
+  ...(options.messages ?? []).filter(message => message.role === 'system').map(message => blocksText(message.content)),
+].filter(text => text !== '').join('\n\n')
+
+// One user message's wire content, normalized: the text to send and the resolved image
+// bytes that go with it. Both empty means the message has nothing to send.
+async function userContent(content, image) {
+  const blocks = Array.isArray(content) ? content : []
+  const images = []
+  for (const block of blocks) if (block?.type === 'image') images.push(await image(block.attachment))
+  // Files never reach a provider natively: the harness's own projection turns every
+  // occurrence into handle text naming the file and its size.
+  const text = [
+    blocksText(content),
+    ...blocks.filter(block => block?.type === 'file').map(block => fileHandleText(block.attachment, undefined)),
+  ].filter(part => part !== '').join('\n')
+  return { text, images }
+}
+
+const dataUrl = image => `data:${image.mediaType};base64,${image.data}`
+
+// OpenAI chat completions: the system prompt leads the messages, tool calls ride on the
+// assistant message, and usage is asked for explicitly so the stream carries it.
+async function openaiCompletionsBody(options, image) {
+  const messages = []
+  const system = systemTextOf(options)
+  if (system !== '') messages.push({ role: 'system', content: system })
+  for (const message of options.messages ?? []) {
+    if (message.role === 'system' || message.role === 'developer') continue
+    if (message.role === 'tool') {
+      messages.push({ role: 'tool', tool_call_id: message.toolCallId, content: blocksText(message.content) })
+      continue
+    }
+    if (message.role === 'assistant') {
+      const text = blocksText(message.content)
+      const calls = toolCallsOf(message.content)
+      if (text === '' && calls.length === 0) continue
+      messages.push({
+        role: 'assistant',
+        content: text === '' ? null : text,
+        ...(calls.length > 0 ? { tool_calls: calls.map(call => ({ id: call.id, type: 'function', function: { name: call.name, arguments: call.arguments } })) } : {}),
+      })
+      continue
+    }
+    const { text, images } = await userContent(message.content, image)
+    if (text === '' && images.length === 0) continue
+    messages.push({
+      role: 'user',
+      content: images.length === 0 ? text : [
+        ...(text === '' ? [] : [{ type: 'text', text }]),
+        ...images.map(shot => ({ type: 'image_url', image_url: { url: dataUrl(shot) } })),
+      ],
+    })
+  }
+  const tools = options.tools ?? []
+  return {
+    model: options.model,
+    messages,
+    stream: true,
+    stream_options: { include_usage: true },
+    ...(tools.length > 0 ? { tools: tools.map(tool => ({ type: 'function', function: { name: tool.name, description: tool.description, parameters: tool.parameters } })), tool_choice: 'auto' } : {}),
+    ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
+    ...(options.maxTokens === undefined ? {} : { max_tokens: options.maxTokens }),
+    ...(options.stop?.length > 0 ? { stop: options.stop } : {}),
+  }
+}
+
+// OpenAI responses: the system prompt is the instructions, items narrate the output, and
+// a tool call is a function_call item its result answers with function_call_output.
+async function openaiResponsesBody(options, image) {
+  const input = []
+  for (const message of options.messages ?? []) {
+    if (message.role === 'system' || message.role === 'developer') continue
+    if (message.role === 'tool') {
+      input.push({ type: 'function_call_output', call_id: message.toolCallId, output: blocksText(message.content) })
+      continue
+    }
+    if (message.role === 'assistant') {
+      const text = blocksText(message.content)
+      if (text !== '') input.push({ role: 'assistant', content: [{ type: 'output_text', text }] })
+      for (const call of toolCallsOf(message.content)) input.push({ type: 'function_call', call_id: call.id, name: call.name, arguments: call.arguments })
+      continue
+    }
+    const { text, images } = await userContent(message.content, image)
+    if (text === '' && images.length === 0) continue
+    input.push({
+      role: 'user',
+      content: [
+        ...(text === '' ? [] : [{ type: 'input_text', text }]),
+        ...images.map(shot => ({ type: 'input_image', image_url: dataUrl(shot) })),
+      ],
+    })
+  }
+  const tools = options.tools ?? []
+  return {
+    model: options.model,
+    input,
+    stream: true,
+    ...(systemTextOf(options) === '' ? {} : { instructions: systemTextOf(options) }),
+    ...(tools.length > 0 ? { tools: tools.map(tool => ({ type: 'function', name: tool.name, description: tool.description, parameters: tool.parameters })) } : {}),
+    ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
+    ...(options.maxTokens === undefined ? {} : { max_output_tokens: options.maxTokens }),
+    ...(options.stop?.length > 0 ? { stop: options.stop } : {}),
+  }
+}
+
+// Anthropic messages: the system prompt is its own field, images are base64 sources, and
+// a tool result is a user message. Two messages of one role in a row are refused, so a
+// tool result that follows a user message joins it.
+async function anthropicBody(options, image) {
+  const messages = []
+  for (const message of options.messages ?? []) {
+    if (message.role === 'system' || message.role === 'developer') continue
+    if (message.role === 'tool') {
+      messages.push({
+        role: 'user',
+        content: [{
+          type: 'tool_result',
+          tool_use_id: message.toolCallId,
+          content: blocksText(message.content),
+          ...(message.isError === true ? { is_error: true } : {}),
+        }],
+      })
+      continue
+    }
+    if (message.role === 'assistant') {
+      const text = blocksText(message.content)
+      const content = [
+        ...(text === '' ? [] : [{ type: 'text', text }]),
+        ...toolCallsOf(message.content).map(call => ({ type: 'tool_use', id: call.id, name: call.name, input: JSON.parse(call.arguments || '{}') })),
+      ]
+      if (content.length === 0) continue
+      messages.push({ role: 'assistant', content })
+      continue
+    }
+    const { text, images } = await userContent(message.content, image)
+    const content = [
+      ...(text === '' ? [] : [{ type: 'text', text }]),
+      ...images.map(shot => ({ type: 'image', source: { type: 'base64', media_type: shot.mediaType, data: shot.data } })),
+    ]
+    if (content.length === 0) continue
+    messages.push({ role: 'user', content })
+  }
+  const merged = []
+  for (const message of messages) {
+    const previous = merged.at(-1)
+    if (previous !== undefined && previous.role === message.role) previous.content.push(...message.content)
+    else merged.push(message)
+  }
+  const tools = options.tools ?? []
+  const system = systemTextOf(options)
+  return {
+    model: options.model,
+    messages: merged,
+    stream: true,
+    ...(system === '' ? {} : { system }),
+    ...(tools.length > 0 ? { tools: tools.map(tool => ({ name: tool.name, description: tool.description, input_schema: tool.parameters })) } : {}),
+    ...(options.temperature === undefined ? {} : { temperature: options.temperature }),
+    ...(options.maxTokens === undefined ? {} : { max_tokens: options.maxTokens }),
+    ...(options.stop?.length > 0 ? { stop_sequences: options.stop } : {}),
+  }
+}
+
+const BODIES = {
+  'openai-completions': openaiCompletionsBody,
+  'openai-responses': openaiResponsesBody,
+  'anthropic-messages': anthropicBody,
+}
+
+// One protocol's request body for one fully-assembled call. `image` resolves a live
+// image block to the bytes and media type the wire carries; a request that cannot
+// resolve one fails instead of reaching the model with a hole in it.
+export function serializeRequest(protocol, options, image) {
+  if (BODIES[protocol] === undefined) throw invalid(`The protocol is one of: ${PROTOCOLS.join(', ')}`)
+  return BODIES[protocol](options, image)
+}
+
+// ---- the adapter ----
+
+// The key a route authenticates with: the vault first, then the environment under the
+// same reference, as DSH's own apiKeyEnv convention reads it. The reference is named in
+// the failure; the value never is.
+async function keyFor(entry, vault) {
+  const ref = entry.keyRef
+  const stored = await vault.get(ref)
+  const raw = stored ?? process.env[ref]
+  if (raw === undefined || raw === '') {
+    throw new LlmError(`No API key for ${entry.id}: set it in DS Bot's providers or export ${ref}`, 'MISSING_CREDENTIAL')
+  }
+  return assertUsableApiKey(raw, PKG.name, ref)
+}
+
+// The adapter for the routes the own directory holds. One generation of a route — the
+// entry as it stood when the call was prepared — owns both the model metadata and the
+// dispatch, so a directory change between the two cannot mix them.
+export class BotLlmAdapter extends LlmAdapter {
+  constructor({ routes, vault, attachments }) {
+    super()
+    this.routes = routes
+    this.vault = vault
+    this.attachments = attachments
+  }
+
+  entry(provider) {
+    const entry = this.routes().find(route => route.id === provider)
+    if (entry === undefined) throw new LlmError(`The provider ${provider} is no longer set up`, 'NO_ADAPTER')
+    return entry
+  }
+
+  modelOf(entry, model) {
+    const found = entry.models.find(served => served.id === model)
+    if (found === undefined) throw new LlmError(`The model ${model} is not served by ${entry.id}`, 'NO_MODEL')
+    return found
+  }
+
+  providerInfo(provider) {
+    const entry = this.entry(provider)
+    return { id: entry.id, name: entry.name ?? entry.id }
+  }
+
+  async listModels(provider) {
+    const entry = this.entry(provider)
+    return entry.models.map(model => ({
+      provider: entry.id,
+      id: model.id,
+      name: model.name ?? model.id,
+      ...(model.input?.length > 0 ? { inputModalities: [...model.input] } : {}),
+    }))
+  }
+
+  async resolveModel(provider, model) {
+    const entry = this.entry(provider)
+    const found = this.modelOf(entry, model)
+    return {
+      provider: entry.id,
+      id: found.id,
+      name: found.name ?? found.id,
+      ...(found.input?.length > 0 ? { inputModalities: [...found.input] } : {}),
+      ...(found.contextWindow === undefined ? {} : { context: { contextWindow: found.contextWindow } }),
+      ...(found.maxTokens === undefined ? {} : { defaultMaxTokens: found.maxTokens }),
+    }
+  }
+
+  async prepareCall(provider, model, signal) {
+    const entry = this.entry(provider)
+    return { model: await this.resolveModel(provider, model, signal), stream: options => this.streamWith(entry, options) }
+  }
+
+  async *stream(options) {
+    yield* this.streamWith(this.entry(options.provider), options)
+  }
+
+  async *streamWith(entry, options) {
+    const found = this.modelOf(entry, options.model)
+    const apiKey = await keyFor(entry, this.vault)
+    const readsImages = found.input?.includes('image') === true
+    const body = await serializeRequest(entry.protocol, options, async (ref) => {
+      if (!readsImages) throw new LlmError(`The model ${entry.id}/${found.id} cannot read images`, 'UNSUPPORTED_CONTENT')
+      const store = this.attachments?.()
+      if (store === undefined) throw new LlmError('This DSH cannot read image attachments', 'UNSUPPORTED_CONTENT')
+      const version = await store.readImageRequest(ref, this.imageRequestTarget(entry.id, found.id, ref), options.signal)
+      return { mediaType: version.mediaType, data: Buffer.from(version.data).toString('base64') }
+    })
+    yield* streamWire({
+      protocol: entry.protocol,
+      baseURL: entry.baseURL,
+      apiKey,
+      body,
+      signal: options.signal,
+      attribution: attributionHeaders(),
+    })
+  }
+}
+
+// ---- install: the directory, the vault and the registration ----
+
+export function install(rt) {
+  const { ctx, state } = rt
+  const vault = keyVault(rt.home)
+  const directory = () => Object.values(state.providers ?? {})
+  const adapter = new BotLlmAdapter({
+    routes: directory,
+    vault,
+    attachments: () => ctx.get?.('attachments'),
+  })
+  let handle
+  // The routes this registration currently holds; the rest of what the registry serves
+  // belongs to another adapter.
+  let registered = []
+
+  // A route another adapter already serves would fail the whole registration with
+  // DUPLICATE_ADAPTER, so the clashing ones stay where they are and this adapter takes
+  // the rest; the first route that appears later picks them up.
+  const foreign = () => new Set((ctx.llm?.listProviders?.() ?? [])
+    .map(provider => provider.id)
+    .filter(id => !registered.includes(id)))
+  const sync = () => {
+    const wanted = directory().map(entry => entry.id)
+    const taken = foreign()
+    for (const id of wanted) {
+      if (taken.has(id)) rt.warn('ds-bot: the provider %s is served by another adapter, so the own directory skips it', id)
+    }
+    const ids = wanted.filter(id => !taken.has(id))
+    try {
+      if (handle === undefined) {
+        // An empty initial registration is refused, so the adapter waits for its first route.
+        if (ids.length === 0) return
+        handle = ctx.llm.registerAdapter(ids, adapter)
+      } else {
+        handle.replace(ids)
+      }
+      registered = ids
+    } catch (error) {
+      rt.warn('ds-bot: the own providers were not registered: %s', error?.message ?? error)
+    }
+  }
+  // Another adapter dropping a route this one skipped lets it take the route over. The
+  // event this registration itself fires finds every wanted route held and does nothing.
+  ctx.on?.('llm/adapters-updated', () => {
+    const wanted = directory().map(entry => entry.id)
+    if (wanted.some(id => !registered.includes(id) && !foreign().has(id))) sync()
+  })
+
+  sync()
+
+  Object.assign(rt, {
+    ownProviders: directory,
+    ownKeyVault: vault,
+    // The directory write path: the entry is validated as it is stored, the key goes to
+    // the vault under the entry's reference, and the registration follows the change.
+    async setOwnProvider(entry, key) {
+      const checked = providerEntry({ ...entry, keyRef: entry?.keyRef ?? keyRefFor(entry?.id ?? '') })
+      state.providers ??= {}
+      state.providers[checked.id] = checked
+      if (typeof key === 'string' && key.trim() !== '') await vault.set(checked.keyRef, checkKey(key))
+      await rt.save()
+      sync()
+      return checked
+    },
+    async removeOwnProvider(id) {
+      const entry = state.providers?.[id]
+      if (entry === undefined) return false
+      delete state.providers[id]
+      const shared = directory().some(other => other.keyRef === entry.keyRef)
+      if (!shared && entry.keyRef === keyRefFor(id)) await vault.remove(entry.keyRef)
+      await rt.save()
+      sync()
+      return true
+    },
+    ownProviderSync: sync,
+  })
 }
