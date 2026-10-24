@@ -427,6 +427,8 @@ export function install(rt) {
   }
 
   // An exact Fetch route on the shared /api channel; the browser authenticates with its session cookie.
+  // `handle` also serves the plugin's own HTTP outlet (outlet.js), which is why it sits on `rt`.
+  rt.botChannel = handle
   ctx.effect(() => ctx.connection.fetch.register({
     path: ROUTE,
     methods: ['POST'],
