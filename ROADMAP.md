@@ -12,7 +12,6 @@
 - 上游 0.2.0 已交付「自带锁定版 DSH（0.2.1-rc.2）+ 独立 profile + 独立数据目录」的桌面 app（Windows exe / macOS zip，自动更新、Win11 Mica、只装当前用户）——「独立软件」最难的基建（安装器、更新、签名 CI）上游已模板化，fork 直接站在成品上
 - 壳（Electron 主进程 + profile-boot 三 bundle）基本不动；**全部定制集中在 `ds-bot/`**
 - 桌宠融合列为第二阶段诱饵：上游默认 Main Bot 就是「a whale in DeepSeek blue」，与 miasaki 桌宠 whale 帧同源；等上游 `app/ui`（React 自绘界面，目前 On hold）推进后接桌宠状态层顺水推舟，现在硬融要在 DSH 网页前端里塞 Win32 原生层，上游自己都特意没这么做
-- 本地位置：`C:\Users\Asakii\Desktop\miasaki-dsbot\`（monorepo 外，git 独立）
 
 > **2026-10-22 修正**：路线 A 的隐含前提「长期吃到上游 1.2 天/版的 merge 红利」在解耦阶段 C（自有 Agent 循环）完成后**不再成立**——届时与上游代码脱钩，只借鉴 `docs/plans` 的设计。阶段 A 期间 merge 红利照常；B1 起 `app/` 不再同步上游（见 §五）。
 

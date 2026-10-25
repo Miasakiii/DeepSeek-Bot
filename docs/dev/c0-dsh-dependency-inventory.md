@@ -181,7 +181,7 @@ DS Bot 实际读取 8 类 DSH 会话事件：`turn/start`、`turn/end`、`user/m
 | `inflight.json`（含 approval 语义） | 自有 | approval 语义来自 DSH | 保留；崩溃恢复指标要自建 |
 | `secrets.json`、`ocr.json`、`logs/`、`group-lines/` | 纯自有 | 无 | 直接迁移 |
 | `state.lock`（home-lock.js 自研） | 自有 | 无 | 保留（多窗口/多 host 仍需要） |
-| DSH 侧 `sessions/`、`attachments/`、`profiles/`、`.credentials.yaml` | DSH 所有 | – | 只作导入/迁移源（`app/src/import.mjs` 已实现拷贝） |
+| DSH 侧 `sessions/`、附件目录（attachments）、`profiles/`、`.credentials.yaml` | DSH 所有 | – | 只作导入/迁移源（`app/src/import.mjs` 已实现拷贝） |
 
 ### 8.2 DSH 会话格式（0.2.1-rc.2）
 
