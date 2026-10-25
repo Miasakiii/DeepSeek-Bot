@@ -1,5 +1,4 @@
-// Windows and a Linux AppImage download and install updates; macOS and a Linux deb ask before
-// opening the release page.
+// Windows downloads and installs updates; macOS asks before opening the release page.
 
 export const UPDATE_TEXT = {
   en: {
@@ -25,7 +24,7 @@ export const UPDATE_TEXT = {
 }
 
 const CHECK_EVERY_MS = 4 * 60 * 60_000
-export const RELEASES_URL = 'https://api.github.com/repos/Fei2411/DeepSeek-Bot/releases?per_page=20'
+export const RELEASES_URL = 'https://api.github.com/repos/Miasakiii/DeepSeek-Bot/releases?per_page=20'
 
 function parseVersion(version) {
   if (typeof version !== 'string') return null
@@ -74,38 +73,35 @@ function isHttpsPage(page) {
   }
 }
 
-// The About row shows the checker's phase: checking → current | downloading → downloaded |
-// available | failed. While a check, a download or a ready install is on, a new check must
-// not start, so `check()` is a no-op in those phases.
-const UPDATE_BUSY = new Set(['checking', 'downloading', 'downloaded'])
-
-function stateHolder(log) {
-  let state = { phase: 'checking' }
+// The app's own update state as the window's update card reads it through the bridge
+// (`dshDesktop.updates` in the plugin's client): `phase` names the updater's stage, in
+// the terms the card matches against (its `dsh-offer.js`), and `version` is what a check
+// found. `status()` answers the snapshot; `subscribe` hears every change of it.
+function appStatus() {
+  let status = { phase: 'idle', version: null }
   const listeners = new Set()
   return {
-    state: () => state,
-    set: (next) => {
-      state = next
-      for (const listener of [...listeners]) {
-        try { listener(next) } catch (error) { log.error(`DeepSeek Bot: an update state listener failed: ${error instanceof Error ? error.message : String(error)}`) }
-      }
+    // A stage of the same update keeps the version it found; passing null clears it.
+    // A release's stage carries the page its Download button opens, and the next
+    // stage without one clears it.
+    set(phase, version = status.version, page = status.page) {
+      if (phase === status.phase && version === status.version && page === status.page) return
+      status = { phase, version, ...(typeof page === 'string' ? { page } : {}) }
+      for (const listener of listeners) listener(status)
     },
-    subscribe: (listener) => {
+    status: () => Promise.resolve({ ...status }),
+    subscribe(listener) {
       listeners.add(listener)
       return () => { listeners.delete(listener) }
     },
   }
 }
 
-// `asset` names the release asset of this install (default: the macOS zip); a release without
-// it does not count.
-export function watchReleases({ current, arch, fetch = globalThis.fetch, ask, open, feed = RELEASES_URL, log = console, asset }) {
-  const assetName = asset ?? (version => `DeepSeek-Bot-${version}-mac-${arch}.zip`)
+export function watchReleases({ current, arch, fetch = globalThis.fetch, ask, open, feed = RELEASES_URL, log = console }) {
   let asked
   let latest = Promise.resolve(null)
-  const holder = stateHolder(log)
-  const run = () => {
-    holder.set({ phase: 'checking' })
+  const app = appStatus()
+  const check = () => {
     latest = (async () => {
       try {
         const response = await fetch(feed, {
@@ -113,13 +109,11 @@ export function watchReleases({ current, arch, fetch = globalThis.fetch, ask, op
         })
         if (!response.ok) {
           log.error(`DeepSeek Bot: update check failed: HTTP ${String(response.status)}`)
-          holder.set({ phase: 'failed' })
           return null
         }
         const releases = await response.json()
         if (!Array.isArray(releases)) {
           log.error('DeepSeek Bot: update check failed: releases response is not an array')
-          holder.set({ phase: 'failed' })
           return null
         }
         const currentVersion = parseVersion(current)
@@ -130,7 +124,7 @@ export function watchReleases({ current, arch, fetch = globalThis.fetch, ask, op
             || (release.prerelease === true && !allowPrerelease)) continue
           const version = typeof release.tag_name === 'string' ? release.tag_name.replace(/^v/u, '') : ''
           if (!isNewer(version, current)) continue
-          if (!Array.isArray(release.assets) || !release.assets.some(entry => entry?.name === assetName(version))) continue
+          if (!Array.isArray(release.assets) || !release.assets.some(asset => asset?.name === `DeepSeek-Bot-${version}-mac-${arch}.zip`)) continue
           if (!isHttpsPage(release.html_url)) {
             log.error('DeepSeek Bot: update check failed: release page URL is not HTTPS')
             continue
@@ -138,9 +132,10 @@ export function watchReleases({ current, arch, fetch = globalThis.fetch, ask, op
           if (found === undefined || isNewer(version, found.version)) found = { version, page: release.html_url }
         }
         if (found === undefined) {
-          holder.set({ phase: 'current' })
+          app.set('idle', null, null)
           return null
         }
+        app.set('available', found.version, found.page)
         log.info(`DeepSeek Bot: update ${found.version} available`)
         if (ask !== undefined && asked !== found.version) {
           asked = found.version
@@ -148,20 +143,16 @@ export function watchReleases({ current, arch, fetch = globalThis.fetch, ask, op
             .then(yes => (yes ? open(found.page) : undefined))
             .catch((error) => { log.error(`DeepSeek Bot: update ${found.version} not opened: ${error instanceof Error ? error.message : String(error)}`) })
         }
-        holder.set({ phase: 'available', version: found.version, page: found.page })
         return found
       } catch (error) {
         log.error(`DeepSeek Bot: update check failed: ${error instanceof Error ? error.message : String(error)}`)
-        holder.set({ phase: 'failed' })
         return null
       }
     })()
   }
-  // A check runs at once and then on the timer; a manual one only starts when none is on.
-  const check = () => { if (!UPDATE_BUSY.has(holder.state().phase)) run() }
-  run()
+  check()
   const timer = setInterval(check, CHECK_EVERY_MS)
-  return { stop: () => { clearInterval(timer) }, latest: () => latest, state: holder.state, subscribe: holder.subscribe, check }
+  return { stop: () => { clearInterval(timer) }, latest: () => latest, check, status: app.status, subscribe: app.subscribe }
 }
 
 /**
@@ -177,58 +168,48 @@ export function watchReleases({ current, arch, fetch = globalThis.fetch, ask, op
  * @returns {{
  *   stop: () => void,
  *   latest: () => Promise<{ version: string, downloaded: Promise<boolean> } | null>,
- *   install: () => Promise<void>,
- *   state: () => { phase: string, version?: string, page?: string },
- *   subscribe: (listener: (state: { phase: string }) => void) => () => void,
  *   check: () => void,
+ *   install: () => Promise<void>,
+ *   status: () => Promise<{ phase: string, version: string | null, page?: string }>,
+ *   subscribe: (listener: (status: { phase: string, version: string | null }) => void) => () => void,
  * }} `latest` is what the newest check found: the version and whether its download finished.
- *   `install` stops the Host and runs the installer, which opens the app again. `state` is
- *   the phase the About row shows; `check` runs the same check the timer does and does
- *   nothing while a check, a download or a ready install is on.
+ *   `install` stops the Host and runs the installer, which opens the app again. `status`
+ *   and `subscribe` carry the app's own update state to the window's update card.
  */
 export function watchUpdates({ updater, beforeInstall, ask, feed, log = console }) {
   updater.autoDownload = true
   updater.autoInstallOnAppQuit = true
   if (feed) updater.setFeedURL({ provider: 'generic', url: feed })
-  const holder = stateHolder(log)
   const install = async () => {
     await beforeInstall()
     updater.quitAndInstall(true, true)
   }
+  const app = appStatus()
   let asked
-  updater.on('checking-for-update', () => { holder.set({ phase: 'checking' }) })
-  updater.on('update-not-available', () => { holder.set({ phase: 'current' }) })
-  updater.on('update-available', (info) => { holder.set({ phase: 'downloading', version: info?.version }) })
+  // The stages the update card matches against, as electron-updater reports them. A check
+  // that finds nothing retires what an earlier one found; a failed download also comes as
+  // an 'error' event.
+  updater.on('update-available', ({ version }) => { app.set('available', version) })
+  updater.on('download-progress', () => { app.set('downloading') })
+  updater.on('update-downloaded', ({ version }) => { app.set('ready', version) })
+  updater.on('update-not-available', () => { app.set('idle', null) })
+  updater.on('error', () => { app.set('error') })
   updater.on('update-downloaded', ({ version }) => {
     log.info(`DeepSeek Bot: update ${version} downloaded`)
-    holder.set({ phase: 'downloaded', version })
     if (ask === undefined || asked === version) return
     asked = version
     void ask(version).then(now => (now ? install() : undefined))
       .catch((error) => { log.error(`DeepSeek Bot: update ${version} not installed: ${error instanceof Error ? error.message : String(error)}`) })
   })
-  // A downloaded update stays ready: a later failed check does not hide it.
-  updater.on('error', (error) => {
-    log.error(`DeepSeek Bot: update failed: ${error instanceof Error ? error.message : String(error)}`)
-    if (holder.state().phase !== 'downloaded') holder.set({ phase: 'failed' })
-  })
+  updater.on('error', (error) => { log.error(`DeepSeek Bot: update failed: ${error instanceof Error ? error.message : String(error)}`) })
   let latest = Promise.resolve(null)
   // A failed check or download also comes as an 'error' event.
-  // The events normally move the phase; a check that settles without one must not leave it
-  // on `checking`, or the busy guard would also stop the timer's checks.
-  const settled = (next) => { if (holder.state().phase === 'checking') holder.set(next) }
-  const run = () => {
-    latest = updater.checkForUpdates().then((result) => {
-      if (result?.isUpdateAvailable && result.downloadPromise) {
-        settled({ phase: 'downloading', version: result.updateInfo.version })
-        return { version: result.updateInfo.version, downloaded: result.downloadPromise.then(() => true, () => false) }
-      }
-      settled({ phase: 'current' })
-      return null
-    }, () => { settled({ phase: 'failed' }); return null })
+  const check = () => {
+    latest = updater.checkForUpdates().then(result => (result?.isUpdateAvailable && result.downloadPromise
+      ? { version: result.updateInfo.version, downloaded: result.downloadPromise.then(() => true, () => false) }
+      : null), () => null)
   }
-  const check = () => { if (!UPDATE_BUSY.has(holder.state().phase)) run() }
-  run()
+  check()
   const timer = setInterval(check, CHECK_EVERY_MS)
-  return { stop: () => { clearInterval(timer) }, latest: () => latest, install, state: holder.state, subscribe: holder.subscribe, check }
+  return { stop: () => { clearInterval(timer) }, latest: () => latest, check, install, status: app.status, subscribe: app.subscribe }
 }

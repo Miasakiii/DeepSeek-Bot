@@ -9,7 +9,7 @@ groupmod -o -g "$PGID" node
 usermod -o -u "$PUID" node
 
 # First start: seed the data volume with the template home built into the image
-# (a web profile that already has ds-bot installed).
+# (a web profile that already has the plugin installed).
 if [ ! -d /data/profiles/web ]; then
   mkdir -p /data
   cp -a /opt/dsh-template/. /data/

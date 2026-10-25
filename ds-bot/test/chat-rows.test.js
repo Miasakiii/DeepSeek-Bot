@@ -17,7 +17,7 @@ runInNewContext(bundle.outputFiles[0].text, {
       react: {
         createElement: (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat(Infinity) }),
         useState: initial => [initial, () => {}], useRef: current => ({ current }),
-        useLayoutEffect() {}, useEffect() {}, useMemo: make => make(),
+        useLayoutEffect() {}, useEffect() {}, useMemo: make => make(), useId: () => 'row-id',
       },
       'react-dom': {},
       '@deepseek-ai/dsh-client-ui-primitives': {},

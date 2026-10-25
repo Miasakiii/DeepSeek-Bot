@@ -58,7 +58,7 @@ async function api(endpoint, payload = {}) {
   return result.value
 }
 
-const state = () => readJson(join(HOME, 'bot', 'state.json'))
+const state = () => readJson(join(HOME, 'miasaki-dsbot', 'state.json'))
 const botNamed = wanted => Object.values(state().bots).find(bot => bot.name === wanted)
 const roomNamed = wanted => Object.values(state().rooms).find(room => room.name === wanted)
 
@@ -271,7 +271,7 @@ await step('Chief reads the group', () => send(chief().id, '看群 研发群'), 
 // Group memory: what the group keeps stays in the group.
 const groupFact = '研发群的产物放在 out 目录'
 const memoryFile = (...path) => {
-  try { return readFileSync(join(HOME, 'bot', 'memory', ...path, 'MEMORY.md'), 'utf8') } catch { return '' }
+  try { return readFileSync(join(HOME, 'miasaki-dsbot', 'memory', ...path, 'MEMORY.md'), 'utf8') } catch { return '' }
 }
 await step('the group keeps what the user asks it to remember, in the group memory only', () => send(roomNamed('研发群').id, `记住 ${groupFact}`), () => {
   const room = roomNamed('研发群')
@@ -380,7 +380,7 @@ await step('Coder answers from its folder', () => send(botNamed('Coder').id, '�
 await step('Coder goes back to the team workspace', () => api('update-bot', { id: botNamed('Coder').id, workDir: '' }), () => {
   const coder = botNamed('Coder')
   return expect(coder.workDir === undefined, 'folder not cleared')
-    ?? expect(folderOf(coder.sessionId)?.endsWith('-bot-workspace--'), `Coder's chat is under ${folderOf(coder.sessionId)}`)
+    ?? expect(folderOf(coder.sessionId)?.endsWith('-miasaki-dsbot-workspace--'), `Coder's chat is under ${folderOf(coder.sessionId)}`)
 })
 rmSync(project, { recursive: true, force: true })
 
@@ -400,7 +400,7 @@ await step('set prefs', () => api('set-prefs', { theme: 'dark', accent: '#336699
 const devRoomId = roomNamed('研发群')?.id
 await step('delete the group', () => api('delete-room', { id: devRoomId }), () => expect(Object.keys(state().rooms).length === 0, 'group still there')
   ?? expect(memoryFile('groups', devRoomId) === '', 'the group memory is still in place')
-  ?? expect(readdirSync(join(HOME, 'bot', 'memory', 'archive')).some(entry => entry.startsWith(`group-${devRoomId}`)), 'the group memory is not in the archive'))
+  ?? expect(readdirSync(join(HOME, 'miasaki-dsbot', 'memory', 'archive')).some(entry => entry.startsWith(`group-${devRoomId}`)), 'the group memory is not in the archive'))
 
 await step('delete the copy', async () => {
   const copy = Object.values(state().bots).find(bot => bot.name !== 'Coder' && bot.name.startsWith('Coder'))

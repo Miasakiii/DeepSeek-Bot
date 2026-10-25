@@ -37,7 +37,7 @@ async function start({ fail = {}, services = {}, home: reuse } = {}) {
   const root = reuse === undefined
     ? realpathSync.native(mkdtempSync(join(tmpdir(), 'ds-bot-switch-')))
     : join(reuse, '..', '..')
-  const home = reuse ?? join(root, 'dsh', 'bot')
+  const home = reuse ?? join(root, 'dsh', 'miasaki-dsbot')
   const team = join(home, 'workspace')
   const project = join(root, 'project')
   for (const dir of [team, project]) mkdirSync(dir, { recursive: true })

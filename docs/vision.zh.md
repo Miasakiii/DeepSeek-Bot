@@ -12,10 +12,10 @@ DS Bot 是一支持久化的 Bot 团队，基于 [DeepSeek Harness](https://gith
 
 | 形态 | 是什么 |
 |---|---|
-| `ds-bot` 插件 | 标准的 DSH 插件，装进 DSH Desktop 或 DSH Web 使用。Bot 的全部功能都在这里 |
+| `miasaki-dsbot` 插件 | 标准的 DSH 插件，装进 DSH Desktop 或 DSH Web 使用。Bot 的全部功能都在这里 |
 | DS Bot 桌面应用 | 一打开就是 DS Bot 本体。自带锁定版本的 DSH、自己的 profile 和数据目录，能导入用户在 DSH 里已有的团队，也能安装与 DSH 兼容的插件，逐步形成 DS Bot 自己的插件生态。插件仍然可以单独用 |
 
-两种形态用的是同一份 `ds-bot` 插件。桌面应用的意义在于：DS Bot 自己掌握 profile 和界面，不再受 DSH 通用界面和全局配置的限制（见 [DSH 让步总账](plans/2026-10-13-dsh-concessions.md)）。
+两种形态用的是同一份 `miasaki-dsbot` 插件。桌面应用的意义在于：DS Bot 自己掌握 profile 和界面，不再受 DSH 通用界面和全局配置的限制（见 [DSH 让步总账](plans/2026-10-13-dsh-concessions.md)）。
 
 ## 十条核心要求
 

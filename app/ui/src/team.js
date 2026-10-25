@@ -3,6 +3,7 @@
 // DSH keeps for them in the plugin; here the window keeps those as well.
 import { useRef, useSyncExternalStore } from 'react'
 import { call } from '../../../ds-bot/src/client/api.js'
+import { noticeApprovals } from '../../../ds-bot/src/client/approval-notices.js'
 import { workPhrase } from '../../../ds-bot/src/client/cells.js'
 import { language } from '../../../ds-bot/src/client/i18n.js'
 import { toolState } from '../../../ds-bot/src/client/mark.js'
@@ -16,7 +17,9 @@ import { openFeed } from './api.js'
 
 // Memory news and connector states change without a notice on the feed.
 const CATCH_UP_MS = 15_000
-const READ_AGAIN = new Set(['hello', 'revision', 'live'])
+// `account` news changes the served models with it (a finished DeepSeek login adds the
+// account route's models), so it reads the roster again too.
+const READ_AGAIN = new Set(['hello', 'revision', 'live', 'account'])
 const NO_WORK = { bots: {}, approvals: [] }
 
 // A selection from a source. The value is kept per snapshot and selector, so React reads
@@ -61,6 +64,9 @@ export function createTeam() {
   const memoryNews = createSource({})
   const live = createSource({})
   const cards = createSource({})
+  // Edited dock cards keep their component when history arrives. This source holds
+  // only request identities and counts, never drafts or secret values.
+  const heldCards = createSource({})
   const turnClock = createSource({})
   const update = createSource({ available: false, phase: 'idle' })
   const browserPages = createSource({})
@@ -138,8 +144,10 @@ export function createTeam() {
     return bot ? currentPart(bot) : id
   }
 
+  // Wakes the update check loop after an install starts; start() owns the loop.
+  let wakeUpdate = () => {}
   const actions = {
-    ...teamActions({ call, after, partFor, roster, ui, live, cards, turnClock }),
+    ...teamActions({ call, after, partFor, roster, ui, live, cards, heldCards, turnClock }),
     // The full-pane overlays sit above the conversation, so opening one dismisses them.
     openSession: (id) => {
       ui.set(state => (state.newChat || state.exchange || state.menu || state.palette ? { ...state, newChat: null, exchange: null, menu: null, palette: null } : state))
@@ -177,6 +185,17 @@ export function createTeam() {
     addProvider: body => after(call('provider-add', body)),
     providerModels: body => call('provider-models', body),
     removeProvider: provider => after(call('provider-remove', { provider })),
+    // The window has no shell to carry DSH's account plugin: its DeepSeek sign-in and
+    // sign-out run on the host's account endpoints. `canSignIn` stays false, so a view
+    // that would borrow the shell's entry (the model menu, the Models page) shows this
+    // window's own.
+    canSignIn: () => false,
+    ownSignIn: () => ui.set(state => ({ ...state, signIn: (state.signIn ?? 0) + 1 })),
+    closeSignIn: () => ui.set(state => ({ ...state, signIn: null })),
+    accountState: () => call('account-state'),
+    accountStart: body => call('account-sign-in', body),
+    accountCancel: id => call('account-cancel', { id }),
+    accountSignOut: () => after(call('account-sign-out', { locale: language(), timezoneOffsetSeconds: -new Date().getTimezoneOffset() * 60 })),
     openModels: () => actions.openSettings('models'),
     // Nothing else draws in the window: no shell panels, right sidebar, "@" menu or voice plugin.
     hasRightSidebar: () => false,
@@ -186,6 +205,26 @@ export function createTeam() {
     noteSent: (sessionId) => {
       sent.set(state => ({ ...state, [sessionId]: [...(state[sessionId] ?? []), { placement: 'direct', time: Date.now() }] }))
     },
+    // Updates run on the host over the outlet's proxied endpoints; the check loop in
+    // start() follows an install every two seconds, as the plugin's window does.
+    checkUpdate: async () => {
+      const value = await call('update-check', { fresh: true })
+      update.set(previous => ({ ...value, app: previous.app }))
+      wakeUpdate()
+    },
+    installUpdate: async () => {
+      const value = await call('update-install')
+      update.set(previous => ({ ...previous, ...value }))
+      wakeUpdate()
+    },
+    installDshUpdate: async () => {
+      const dsh = await call('dsh-update-install')
+      update.set(previous => ({ ...previous, dsh }))
+      wakeUpdate()
+    },
+    // The window derives a Session's turn outline from the chat it shows; the views
+    // read it where DSH keeps its projections (the sidebar preview, the pills' counts).
+    noteOutline: (sessionId, outline) => editRow(sessionId, row => (JSON.stringify(row.projectionValues?.turnOutline) === JSON.stringify(outline) ? row : { ...row, projectionValues: { ...row.projectionValues, turnOutline: outline } })),
   }
 
   // Running and the tool at work come with the team's state; the plugin reads them from
@@ -235,12 +274,41 @@ export function createTeam() {
       onFeed(event, data)
     })
     const timer = setInterval(read, CATCH_UP_MS)
+    // Plugin updates: ask the host once here (it keeps its answer for a while), again
+    // each hour, and every two seconds while one installs.
+    let updateTimer
+    const checkUpdates = async () => {
+      clearTimeout(updateTimer)
+      if (stopped) return
+      const value = await call('update-check', { fresh: false }).catch(() => null)
+      if (stopped) return
+      if (value) update.set(previous => ({ ...value, app: previous.app }))
+      updateTimer = setTimeout(checkUpdates, value?.phase === 'installing' || value?.dsh?.phase === 'installing' ? 2000 : 60 * 60_000)
+    }
+    wakeUpdate = checkUpdates
+    void checkUpdates()
+    // The app's own updater rides the preload's `dsBotApp.updates`: its state sits
+    // beside the host's answer as ownApp, where the About row reads it. In a DSH
+    // window the plugin's client does this itself.
+    const appUpdates = globalThis.dsBotApp?.updates ?? null
+    let stopAppUpdates = () => {}
+    if (appUpdates?.state && appUpdates.subscribe) {
+      const take = (ownApp) => { if (!stopped && ownApp) update.set(previous => ({ ...previous, ownApp })) }
+      void appUpdates.state().then(take, () => {})
+      const unsubscribe = appUpdates.subscribe(take)
+      stopAppUpdates = () => unsubscribe?.()
+    }
+    const stopNotices = noticeApprovals({ work, roster, shownSession: () => shown.getSnapshot(), openSession: id => actions.openSession(id) })
     const onPageHide = () => leaveVisits(Object.keys(ui.getSnapshot().visits ?? {}))
     window.addEventListener('pagehide', onPageHide)
     return () => {
       stopped = true
       closeFeed()
       clearInterval(timer)
+      clearTimeout(updateTimer)
+      wakeUpdate = () => {}
+      stopAppUpdates()
+      stopNotices()
       window.removeEventListener('pagehide', onPageHide)
     }
   }
@@ -254,6 +322,7 @@ export function createTeam() {
     useMemoryNews: use(memoryNews),
     useLive: use(live),
     useCards: use(cards),
+    useHeldCards: use(heldCards),
     useTurnClock: use(turnClock),
     useUpdate: use(update),
     useRegistry: use(registry),

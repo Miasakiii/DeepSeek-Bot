@@ -8,7 +8,7 @@ import { copyTree, real, within } from './copy-tree.mjs'
 
 // The engine's lock on the team belongs to the old folder; the first-run copy and its check
 // leave their temporary folders only when they were cut short.
-const LEFT_BEHIND = [/^bot[\\/]state\.lock$/u, /^\.import(-check)?-\d+$/u]
+const LEFT_BEHIND = [/^(?:bot|miasaki-dsbot)[\\/]state\.lock$/u, /^\.import(-check)?-\d+$/u]
 // Marks a staging folder as this app's, so that only those are removed.
 const MARK = '.ds-bot-moving'
 

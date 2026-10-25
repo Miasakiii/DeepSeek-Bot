@@ -10,6 +10,6 @@
         name: Full access
         description: The container is the boundary. Bots can change every file it can see.
     defaultPreset: danger-full-access
-- id: bot
+- id: miasaki-bot
   config:
     workspace: /workspace

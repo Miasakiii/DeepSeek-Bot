@@ -50,7 +50,7 @@ async function settle({ quiet = 6000, timeout = 300_000 } = {}) {
 
 const tapLines = () => (args.tap && existsSync(args.tap) ? readFileSync(args.tap, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line)) : [])
 const journal = () => {
-  const path = join(HOME, 'bot', 'memory', 'journal.jsonl')
+  const path = join(HOME, 'miasaki-dsbot', 'memory', 'journal.jsonl')
   return existsSync(path) ? readFileSync(path, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line)) : []
 }
 const botNamed = async name => (await api('state')).bots.find(bot => bot.name === name)

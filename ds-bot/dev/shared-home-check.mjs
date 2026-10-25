@@ -21,7 +21,7 @@ if (!name || !webPort || !repo || !rendererPort) {
 }
 const ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 const HOME = join(ROOT, `.dsh-test-desktop-${name}`)
-const saved = () => JSON.parse(readFileSync(join(HOME, 'bot', 'state.json'), 'utf8'))
+const saved = () => JSON.parse(readFileSync(join(HOME, 'miasaki-dsbot', 'state.json'), 'utf8'))
 const names = team => Object.values(team.bots).map(bot => bot.name).sort()
 const mainNames = team => team.mainBotIds.map(id => team.bots[id]?.name ?? id)
 

@@ -136,3 +136,27 @@ test('a window without DSH settings asks for the missing API key in the first ch
   assert.equal(card.props.model.provider, 'official')
   assert.equal(nodes(tree, node => node.props.className === 'bt-model-chips').length, 0)
 })
+
+
+// The own sign-in chip: only where the shell carries no entry of its own, the window
+// signs in through the host's account endpoints instead.
+test('a window without the shell sign-in offers its own', () => {
+  const opened = []
+  const tree = ModelChoiceDock({
+    sessionId: 'chief', useRoster: select => select({ ready: true, byId: { chief: { id: 'chief', name: 'Chief' } }, models: [] }),
+    actions: { canSignIn: () => false, ownSignIn: () => { opened.push('open') } },
+  })
+  const buttons = nodes(tree, node => node.type === 'button')
+  assert.deepEqual(buttons.map(button => button.children[0]), ['Sign in to DeepSeek'])
+  buttons[0].props.onClick()
+  assert.deepEqual(opened, ['open'])
+})
+
+test('a window with the shell sign-in keeps the shell chip alone', () => {
+  const tree = ModelChoiceDock({
+    sessionId: 'chief', useRoster: select => select({ ready: true, byId: { chief: { id: 'chief', name: 'Chief' } }, models: [] }),
+    actions: { canSignIn: () => true, signIn: () => {}, ownSignIn: () => {}, openHarnessSettings: () => {}, openHarnessOnboarding: () => {} },
+  })
+  const labels = nodes(tree, node => node.type === 'button').map(button => button.children[0])
+  assert.deepEqual(labels.filter(label => label === 'Sign in to DeepSeek'), ['Sign in to DeepSeek'])
+})

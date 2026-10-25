@@ -4,6 +4,11 @@
 //   live      work changed without a new revision: ask for `state` again
 //   message   a new entry of a Bot's own chat, as the `chat` endpoint returns it
 //   stream    the reply a Bot is writing: a start, its text as it comes, an end
+//
+// A sink is one connected window: `send(chunk)` writes it (a return of false, or a
+// throw, drops it) and `close()` ends it. DSH's connection route and the plugin's own
+// HTTP outlet (outlet.js) each adapt their transport to that shape, so one publish
+// reaches every window whatever carries it.
 import { ROUTE } from './constants.js'
 
 export const FEED_ROUTE = `${ROUTE}/feed`
@@ -18,22 +23,42 @@ const MAX_QUEUED = 512
 export function install(rt) {
   const { ctx, state } = rt
   const encoder = new TextEncoder()
-  /** @type {Set<ReadableStreamDefaultController<Uint8Array>>} */
+  /** @type {Set<{send:Function, close:Function}>} */
   const clients = new Set()
-  const send = (controller, chunk) => {
-    if ((controller.desiredSize ?? 0) < -MAX_QUEUED) {
-      leave(controller)
-      return
+  // A sink that answers false, or throws, has stopped reading: it is dropped and
+  // reconnects from `hello`.
+  const send = (sink, chunk) => {
+    try {
+      if (sink.send(chunk) === false) leave(sink)
+    } catch {
+      leave(sink)
     }
-    try { controller.enqueue(chunk) } catch { clients.delete(controller) }
   }
   const publish = (event, data) => {
     const chunk = encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
-    for (const controller of clients) send(controller, chunk)
+    for (const sink of clients) send(sink, chunk)
   }
+
+  // One window joins with its sink; the hello event tells it where to catch up.
+  const join = (sink) => {
+    clients.add(sink)
+    send(sink, encoder.encode(`event: hello\ndata: ${JSON.stringify({ revision: state.revision })}\n\n`))
+  }
+  const leave = (sink) => {
+    if (!clients.delete(sink)) return
+    if (clients.size === 0) writing.clear()
+    try { sink.close() } catch { /* already closed or errored */ }
+  }
+  rt.feedJoin = join
+  rt.feedLeave = leave
 
   rt.stateSaved = () => {
     if (clients.size > 0) publish('revision', { revision: state.revision })
+  }
+
+  // The account module's states: each change reaches every window as `account` news.
+  rt.accountNews = (state) => {
+    if (clients.size > 0) publish('account', state)
   }
 
   let liveTimer
@@ -76,40 +101,40 @@ export function install(rt) {
     }
   })
 
-  const leave = (controller) => {
-    clients.delete(controller)
-    if (clients.size === 0) writing.clear()
-    try { controller.close() } catch { /* already closed or errored */ }
-  }
-
   ctx.effect(() => ctx.connection.fetch.register({
     path: FEED_ROUTE,
     methods: ['GET'],
     requestBody: 'buffered',
     fetch: async (request) => {
       let controller
+      const sink = {
+        send: (chunk) => {
+          if ((controller.desiredSize ?? 0) < -MAX_QUEUED) return false
+          try { controller.enqueue(chunk); return true } catch { return false }
+        },
+        close: () => { try { controller.close() } catch { /* already closed or errored */ } },
+      }
       const body = new ReadableStream({
         start(own) {
           controller = own
-          clients.add(own)
-          send(own, encoder.encode(`event: hello\ndata: ${JSON.stringify({ revision: state.revision })}\n\n`))
+          join(sink)
         },
-        cancel() { leave(controller) },
+        cancel() { leave(sink) },
       })
-      request.signal.addEventListener('abort', () => leave(controller), { once: true })
+      request.signal.addEventListener('abort', () => leave(sink), { once: true })
       return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store' } })
     },
   }), 'ds-bot: live feed route')
 
   ctx.effect(() => {
     const keepalive = setInterval(() => {
-      if (clients.size > 0) for (const controller of clients) send(controller, encoder.encode(': keepalive\n\n'))
+      if (clients.size > 0) for (const sink of clients) send(sink, encoder.encode(': keepalive\n\n'))
     }, KEEPALIVE_MS)
     keepalive.unref?.()
     return () => {
       clearInterval(keepalive)
       clearTimeout(liveTimer)
-      for (const controller of clients) leave(controller)
+      for (const sink of [...clients]) leave(sink)
     }
   }, 'ds-bot: live feed')
 }

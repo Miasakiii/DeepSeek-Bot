@@ -1,6 +1,12 @@
 // The window talks only to ds-bot's own channel in the engine: POST api/bot for reads and
 // actions (the Bot views' own `call`), and the live feed api/bot/feed for what changes.
+// The launch URL carries the outlet's token once; the plugin client's `adoptToken` takes
+// it from there, and its `withToken` rides with every request (the outlet answers it with
+// a session cookie, so a reload keeps going without it).
+import { adoptToken, withToken } from '../../../ds-bot/src/client/api.js'
 const RETRY_MS = [500, 1000, 2000, 5000]
+
+export { adoptToken }
 
 function parseEvent(block) {
   let event = 'message'
@@ -22,7 +28,7 @@ export function openFeed(onEvent) {
     for (let failures = 0; !stopped;) {
       controller = new AbortController()
       try {
-        const response = await fetch('api/bot/feed', { signal: controller.signal, cache: 'no-store' })
+        const response = await fetch(withToken('api/bot/feed'), { signal: controller.signal, cache: 'no-store' })
         if (!response.ok || response.body === null) throw new Error(`HTTP ${response.status}`)
         failures = 0
         const reader = response.body.getReader()

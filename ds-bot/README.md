@@ -1,4 +1,4 @@
-# ds-bot
+# miasaki-dsbot
 
 The DS Bot plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (dsh). It turns dsh into a team of long-lived Bots that talk to you, to each other and in group chats. See the [project page](../README.md) for an overview, install steps and screenshots.
 
@@ -25,7 +25,7 @@ Tested with dsh `0.2.1-rc.2` (Web) and `0.2.0-rc.2` (Web and Desktop).
 - **Long chats stay inside the model's window**: dsh's own compaction never runs on a Bot's Session. When a turn ends past the check line (a share of the model's context window), a small separate model call, the context steward, reads the latest messages of the chat and decides once. If the work is still under way, the chat is condensed in place into a checkpoint: a handoff summary plus your recent messages word for word. If the work has reached a stopping point, the Bot writes a handoff note and continues in a new part. Either way you still see one chat, with no marker. Earlier parts and condensed messages stay searchable in a full-text index (`node:sqlite` FTS5) through `read_own_chat`.
 - **Memory**: each Bot keeps notes across all its conversations, each group chat keeps its own for its members, and the team shares one more. See [Memory](#memory).
 - **Web search**: see [Web search](#web-search).
-- **Bot browser (dsh Desktop and the desktop app)**: see [Bot browser](#bot-browser).
+- **Bot browser (dsh Desktop only)**: see [Bot browser](#bot-browser).
 - **Images**: for a model that cannot read images, a vision model first turns the image into text.
 - **Secrets**: a Bot asks for an API key or token with a card in its own chat and never sees the value. See [Secrets](#secrets).
 - **Usage**: Settings → Usage shows token usage by time (24 hours to 12 months, or days picked on a calendar), by Bot and by model, with a page for each Bot and each model. Calls that a Session logs are read from the logs, so older chats count too. Calls that leave no log (checkpoints, handoff notes, the steward, image readings, dsh titles and compaction) are counted while they stream, from the time the plugin runs. Tokens only, no cost.
@@ -35,15 +35,15 @@ Tested with dsh `0.2.1-rc.2` (Web) and `0.2.0-rc.2` (Web and Desktop).
 
 The [project page](../README.md#install) has the full steps for dsh Desktop and dsh Web. In short:
 
-- dsh Desktop: Settings → Plugins → add `ds-bot` (npm), a `.tgz` file, or `github:Fei2411/DeepSeek-Bot#v0.1.7&path:/ds-bot`.
-- Command line: `dsh plugin --profile desktop add ds-bot` (or `--profile web`).
+- dsh Desktop: Settings → Plugins → add `miasaki-dsbot` (npm), a `.tgz` file, or `github:Miasakiii/DeepSeek-Bot#v0.1.7&path:/ds-bot`.
+- Command line: `dsh plugin --profile desktop add miasaki-dsbot` (or `--profile web`).
 
 To work on the plugin from a checkout, add it to a dsh profile as a linked dependency and a bundle:
 
 ```json
 {
-  "dependencies": { "ds-bot": "link:/path/to/ds-bot" },
-  "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app", "ds-bot"] } }
+  "dependencies": { "miasaki-dsbot": "link:/path/to/ds-bot" },
+  "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app", "miasaki-dsbot"] } }
 }
 ```
 
@@ -55,26 +55,40 @@ pnpm -s dsh --profile web --no-open
 
 The first time the team opens, the plugin creates a Main Bot called Chief.
 
-**Upgrading from the legacy `dsh-bot` package**: earlier builds used the package name `dsh-bot`. Remove `dsh-bot` from the profile before you add `ds-bot`, because both use the plugin id `bot`. Your team, chats and secrets stay where they are (see [Data and backups](#data-and-backups)); saved browser settings, the theme and Bot colors move over the first time DS Bot opens.
+**Upgrading from the `ds-bot` package**: this fork is a plugin of its own, with its own id (`miasaki-bot`) and its own data folder (`miasaki-dsbot/`), so you can add it while `ds-bot` stays installed. The first time it opens it moves the team from `bot/` into its own folder — unless another dsh is using that team right now, in which case it starts a team of its own. Your team, chats and secrets stay where they are (see [Data and backups](#data-and-backups)); saved browser settings, the theme and Bot colors move over the first time DS Bot opens.
 
 ## Configuration
 
-Options go in the profile's `cordis.patch.yml`, under the `bot` entry. All of them are optional.
+Options go in the profile's `cordis.patch.yml`, under the `miasaki-bot` entry. All of them are optional.
 
 ```yaml
-- id: bot
-  name: ds-bot
+- id: miasaki-bot
+  name: miasaki-dsbot
   config:
     workspace: /path/to/workspace   # where the Bots work; default <home>/workspace
-    home: /path/to/bot-data         # where the team is saved; default $DSH_HOME/bot
+    home: /path/to/bot-data         # where the team is saved; default $DSH_HOME/miasaki-dsbot
     checkRatio: 0.8                 # share of the model's usable window where the steward decides
-    browser: true                   # force the Bot browser on or off; default on in Desktop and the desktop app only
+    browser: true                   # force the Bot browser on or off; default on in Desktop only
     memory: true                    # false turns memory off: no memory tools, section or panel
     memoryReview: true              # false leaves memory to the Bots' own remember calls
     diagnosticsFile: false          # keep the error log in memory only; default <home>/logs/diagnostics.jsonl
     updateCheck: true               # look for a newer DS Bot when a window opens; default true
     updateRegistry: https://registry.example/   # ask only this npm registry for updates
     github: false                   # hide the GitHub connector; default shown in Connectors
+```
+
+**The own HTTP outlet** (the desktop app's own window, phase B1 of the decouple plan): a
+`node:http` server that serves `POST /api/bot`, the `GET /api/bot/feed` stream and the
+window's files on `127.0.0.1`, authenticated with its own token. It stays off unless a
+port is named, so a DSH window is untouched.
+
+```yaml
+- id: miasaki-bot
+  name: miasaki-dsbot
+  config:
+    outletPort: 0                   # 0 lets the system pick a free port; absent leaves it off
+    outletToken: a-secret           # absent: a fresh one per start, printed once at start-up
+    outletRoot: /path/to/ui/dist    # the window's files; absent: no files served
 ```
 
 **Updates**: when a window opens, DS Bot asks where it was installed from for a newer release: the npm registry (the one the DSH plugin manager installs from, then its fallbacks), or the latest GitHub release for a `github:…#vX.Y.Z` install. A newer version shows a cloud button at the top right of the sidebar; **Update** reinstalls DS Bot through the DSH plugin manager, and the new version runs from the next DSH start. A linked or local checkout is never offered an update. Settings → About DS Bot shows the same state, with **Check for updates** to ask again at once.
@@ -114,7 +128,7 @@ A read-only dsh (see [Data and backups](#data-and-backups)) shows memory but can
 
 ## Web search
 
-The package includes a second plugin, `ds-bot/web-search`. It registers the search provider `auto`, and `cordis.patch.yml` makes it the default. Each search goes in this order:
+The package includes a second plugin, `miasaki-dsbot/web-search`. It registers the search provider `auto`, and `cordis.patch.yml` makes it the default. Each search goes in this order:
 
 1. If the profile names another `searchProvider`, that one is used.
 2. The current model route's own search, with that route's key and host. The plugin knows the Anthropic Messages, OpenAI Responses and Gemini protocols, and a few search APIs (Ollama, Kimi, Zhipu, MiMo). Add more with `searchApis`.
@@ -127,7 +141,7 @@ Each result starts with a `Search backend: …` line that names the path it took
 
 ```yaml
 - id: web-search-auto
-  name: ds-bot/web-search
+  name: miasaki-dsbot/web-search
   disabled: true
 - id: web
   name: '@deepseek-ai/dsh-web'
@@ -140,9 +154,9 @@ Another plugin can also set the search provider while dsh runs, after the profil
 
 ## Bot browser
 
-In dsh Desktop and the desktop app, a Bot's chat header has a globe button. It opens that Bot's own browser panel.
+In dsh Desktop, a Bot's chat header has a globe button. It opens that Bot's own browser panel.
 
-- **One partition per Bot** (`bot:<id>`): logins and cookies belong to that Bot only. The desktop app keeps them on disk, so a Bot stays signed in after a restart; dsh Desktop keeps them in memory only.
+- **One partition per Bot** (`bot:<id>`): logins and cookies belong to that Bot only.
 - **The Bot can read the page**: the `read_browser` tool reads the page's DOM, not a screenshot. The text becomes Markdown with headings, nested lists, tables, code blocks and quotes. Links and form controls are marked `[#n]` in place and listed below with their targets and values. The tool also reads the text you selected. Long pages are read in parts (`from`). Page content is treated as data, never as instructions.
   - It reads open Shadow DOM (with `<slot>`) and same-origin iframes up to 3 levels deep.
   - It reads only what is visible: `display:none`, `visibility:hidden`, zero-height and closed `<details>` content is skipped.
@@ -152,7 +166,6 @@ In dsh Desktop and the desktop app, a Bot's chat header has a globe button. It o
   - Read only: the Bot cannot click, type, scroll or open addresses yet.
 - **Addresses**: http and https only. localhost and LAN addresses are allowed; cloud metadata addresses (such as `169.254.x.x`) and dsh's own ports are not.
 - The browser panel and the details drawer share the right column; opening one closes the other. Switching chats switches the panel to that Bot. Deleting a Bot clears its browser and saved address.
-- **Cookie import (desktop app only)**: the import button in the browser bar previews the cookies of a file (Cookie-Editor JSON, Netscape `cookies.txt`, Playwright `storageState`) or of an installed Chromium/Firefox profile, then writes them into the Bot's partition. A source browser closes for a moment so its cookie store can be copied, and it reopens with its tabs. Sign-in that lives outside cookies (localStorage, passkeys) does not come along.
 
 dsh Web has no browser panel and no `read_browser` tool.
 
@@ -165,7 +178,7 @@ When a Bot needs an API key, token or password, it calls `request_secret`, and a
 - **Use**: the value goes into the Bot's shell environment as `DSH_SECRET_<NAME>` (`$DSH_SECRET_NAME` in bash, `$env:DSH_SECRET_NAME` in PowerShell). `list_secrets` lists the names a Bot can use. An MCP capability can also take `$DSH_SECRET_<NAME>` in its env, its headers and its URL (path or query); in the URL the value is URL-encoded. Use headers when the server accepts them.
 - **Masking**: before a tool result is saved and before each request goes to the model, every copy of a secret value is replaced with `[secret:<NAME>]`.
 - **Manage**: Settings → Secrets lists every secret by name, purpose, the Bot that asked and the last use. You can change who may use it, replace the value, delete it or add one. Deleting a Bot removes it from every secret.
-- **Storage**: `<DSH_HOME>/bot/secrets.json`, file mode 600, written atomically. Values are never in `state.json` or logs.
+- **Storage**: `<DSH_HOME>/miasaki-dsbot/secrets.json`, file mode 600, written atomically. Values are never in `state.json` or logs.
 
 Limits:
 
@@ -176,23 +189,22 @@ Limits:
 
 ## Data and backups
 
-The plugin saves its data in `config.home`. Without it, the folder is `$DSH_HOME/bot`, or `~/.dsh/bot` when `DSH_HOME` is not set.
+The plugin saves its data in `config.home`. Without it, the folder is `$DSH_HOME/miasaki-dsbot`, or `~/.dsh/miasaki-dsbot` when `DSH_HOME` is not set.
 
 | System | Default folder |
 |---|---|
-| Linux, macOS | `~/.dsh/bot/` |
-| Windows | `C:\Users\<user>\.dsh\bot\` |
+| Linux, macOS | `~/.dsh/miasaki-dsbot/` |
+| Windows | `C:\Users\<user>\.dsh\miasaki-dsbot\` |
 
 - To move all dsh data (Sessions, profiles and plugin data), set `DSH_HOME`.
 - To move only the plugin data, set `home` in the configuration (see [Configuration](#configuration)).
 
-Files in `bot/`:
+Files in `miasaki-dsbot/`:
 
 | File | Content |
 |---|---|
 | `state.json` | The team: Bots, groups, Bot-to-Bot messages, preferences and open questions. A long message keeps only its first 2,000 characters here; all of it is in the Session it went to. |
 | `group-lines/` | Long group lines, up to the 20,000 characters a member reads, one file per line; each is removed when its line leaves the group's latest 60 lines or the group is deleted |
-| `handoff-results/` | The whole result of a piece of work a Bot handed on, when it is longer than the 2,000 characters `state.json` keeps, one file per result; each is removed once the answer it went into has gone up |
 | `state.lock` | The dsh that is using this data (pid and host), its mtime bumped as a heartbeat. It is removed when that dsh exits; a leftover whose heartbeat has stopped is taken over by the next dsh to load. |
 | `chat-index.sqlite` | Full-text index of older chat parts (`read_own_chat`); rebuilt if deleted |
 | `usage.sqlite` | Token counts for the Usage page; rebuilt from the Session logs if deleted, losing only the calls outside the logs and the names of deleted Bots |
@@ -202,17 +214,17 @@ Files in `bot/`:
 | `secrets.json` | Saved secrets. Treat backups of it like passwords. |
 | `logs/diagnostics.jsonl` | Recent errors and warnings, with keys, tokens, saved secrets and the home folder removed. It moves to `diagnostics.jsonl.1` past 1 MB. Safe to delete. |
 
-The chats themselves are dsh Sessions and are not in `bot/`: they are in `~/.dsh/sessions/`. dsh keeps its workspace list in `~/.dsh/storages/workspace.json` and profiles (with model settings) in `~/.dsh/profiles/`. dsh Desktop keeps each Bot's browser partition in memory only, so its logins are not saved. The desktop app saves them with its own window data, not in the data location, and clears a Bot's when the Bot is deleted.
+The chats themselves are dsh Sessions and are not in `miasaki-dsbot/`: they are in `~/.dsh/sessions/`. dsh keeps its workspace list in `~/.dsh/storages/workspace.json` and profiles (with model settings) in `~/.dsh/profiles/`. Bot browser logins are not saved: Desktop keeps each Bot's partition in memory only.
 
 **Back up and restore**
 
 1. Quit dsh completely (both the Web server and Desktop), so `state.json` is current.
-2. Copy all of `~/.dsh/` (at least `bot/`, `sessions/` and `storages/`). A copy of `bot/` alone loses the chats.
+2. Copy all of `~/.dsh/` (at least `miasaki-dsbot/`, `sessions/` and `storages/`). A copy of `miasaki-dsbot/` alone loses the chats.
 3. To restore, quit dsh, put the folder back in the same place, then start dsh.
 
 **Move to another computer**: `state.json` has no absolute paths except the working folders you set for Bots and groups, but dsh's `storages/workspace.json` and the Session folder names contain the workspace's absolute path. If the path is the same on the new computer, copy the folder. If it is different (another user name or system), it is not yet tested whether dsh finds the old Sessions.
 
-**dsh Web and Desktop at the same time**: by default both use the same `~/.dsh`. The dsh that loads the team first takes `bot/state.lock` and can change the team. The other one is read-only: it shows the team and follows changes to the file, but refuses changes (`bot/read-only`, "open in another dsh"), and its Bots cannot start new Sessions. When the first one exits, the other one takes over on its next request. To change the team from both at once, give one of them a different `DSH_HOME` (two separate teams).
+**dsh Web and Desktop at the same time**: by default both use the same `~/.dsh`. The dsh that loads the team first takes `miasaki-dsbot/state.lock` and can change the team. The other one is read-only: it shows the team and follows changes to the file, but refuses changes (`miasaki-dsbot/read-only`, "open in another dsh"), and its Bots cannot start new Sessions. When the first one exits, the other one takes over on its next request. To change the team from both at once, give one of them a different `DSH_HOME` (two separate teams).
 
 ## Development
 

@@ -15,7 +15,9 @@ export function install(rt) {
   // only with the provider, which also drops the catalog cache.
   const reasoningCache = new Map()
   ctx.on?.('llm/adapters-updated', () => { catalogCache = { at: 0, value: [] }; reasoningCache.clear() })
-  for (const name of ['credentials/reference-updated', 'settings/document-updated']) ctx.on?.(name, () => { catalogCache = { at: 0, value: [] } })
+  // `credentials/record-updated` is what a finished DeepSeek account login writes; the
+  // signed-out event is its removal. Both change which models the account route serves.
+  for (const name of ['credentials/reference-updated', 'credentials/record-updated', 'settings/document-updated', 'deepseek-account/signed-out']) ctx.on?.(name, () => { catalogCache = { at: 0, value: [] } })
 
   // The thinking levels a model serves: `{efforts: [{id, name, description?}],
   // defaultEffort?}`, or undefined when it has none or the provider cannot say.

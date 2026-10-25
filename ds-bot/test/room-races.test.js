@@ -31,7 +31,7 @@ async function start(team = TEAM) {
   // The project folder sits beside the team's data, which no Bot may work in.
   // The native realpath: on Windows the JS one keeps 8.3 short names.
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'ds-bot-room-races-')))
-  const home = join(root, 'bot')
+  const home = join(root, 'miasaki-dsbot')
   const folder = join(root, 'project')
   for (const dir of [home, folder]) mkdirSync(dir)
   writeFileSync(join(home, 'state.json'), JSON.stringify(team))

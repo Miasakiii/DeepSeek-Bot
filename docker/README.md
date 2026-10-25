@@ -1,7 +1,7 @@
 # DS Bot in Docker
 
 This directory deploys DS Bot as a Docker image: a `dsh web` server (DeepSeek
-Harness) with the `ds-bot` plugin installed, ready for a NAS or any always-on
+Harness) with the `miasaki-dsbot` plugin installed, ready for a NAS or any always-on
 box. The container is the sandbox boundary — see [Permissions](#permissions).
 
 ## Requirements
@@ -185,7 +185,7 @@ from the repository root would use the local root Compose file instead.
 ```yaml
 services:
   ds-bot:
-    image: ghcr.io/fei2411/deepseek-bot:dev
+    image: ghcr.io/miasakiii/deepseek-bot:dev
     ports:
       - "13080:3080"
     environment:

@@ -4,7 +4,7 @@ import { app, dialog } from 'electron'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { findTeam, newerSessions, teamInUse, userDshHome, within } from './import.mjs'
+import { findTeam, newerSessions, teamDirOf, teamInUse, userDshHome, within } from './import.mjs'
 import { installFolder } from './move-data.mjs'
 
 const TEXT = {
@@ -111,7 +111,7 @@ function placeProblem(t, dataDir, workspace) {
 
 function hasTeam(dataDir) {
   try {
-    return Object.keys(JSON.parse(readFileSync(join(dataDir, 'bot', 'state.json'), 'utf8')).bots ?? {}).length > 0
+    return Object.keys(JSON.parse(readFileSync(join(dataDir, teamDirOf(dataDir), 'state.json'), 'utf8')).bots ?? {}).length > 0
   } catch {
     return false
   }
@@ -163,7 +163,7 @@ export async function chooseLocations(signal) {
     return { dataDir: saved.dataDir, workspace: saved.workspace }
   }
   const t = text()
-  let dataDir = join(homedir(), '.ds-bot')
+  let dataDir = join(homedir(), '.miasaki-dsbot')
   let workspace = join(homedir(), 'DeepSeek Bot')
   try {
     for (;;) {

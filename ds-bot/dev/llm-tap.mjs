@@ -1,10 +1,11 @@
-// A logging pass-through for runs against a real model route, in OpenAI chat completions
-// or Anthropic Messages format. Point the provider's baseURL at it; it forwards every
-// request to the upstream base URL unchanged (all headers but the hop-by-hop ones, the
-// provider's key and session headers included) and writes one JSON line per call: what
-// kind of call it was, which Bot made it, token usage, the latest input and the answer.
-// Headers are never logged. `usage` is the provider's own; `tokens` puts both formats in
-// one shape: { prompt (cached included), cached, output }.
+// A logging pass-through for runs against a real model route, in OpenAI chat
+// completions, OpenAI responses or Anthropic Messages format. Point the provider's
+// baseURL at it; it forwards every request to the upstream base URL unchanged (all
+// headers but the hop-by-hop ones, the provider's key and session headers included)
+// and writes one JSON line per call: what kind of call it was, which Bot made it,
+// token usage, the latest input and the answer. Headers are never logged. `usage` is
+// the provider's own; `tokens` puts every format in one shape: { prompt (cached
+// included), cached, output }.
 //
 //   node dev/llm-tap.mjs <port> <upstream base URL> <log.jsonl> [body dir]
 //
@@ -35,10 +36,23 @@ let next = 0
 const textOf = content => (typeof content === 'string' ? content
   : Array.isArray(content) ? content.map(part => part?.text ?? '').join('\n') : '')
 
+// The messages of a request on either wire: Anthropic and chat completions carry
+// `messages`; the responses wire carries input items, which map onto the same roles.
+function messagesOf(body) {
+  if (Array.isArray(body?.messages)) return body.messages
+  if (!Array.isArray(body?.input)) return []
+  return body.input.map((item) => {
+    if (item.role !== undefined) return { role: item.role, content: textOf(item.content) }
+    if (item.type === 'function_call_output') return { role: 'tool', content: String(item.output ?? '') }
+    return { role: 'assistant', content: '' }
+  })
+}
+
 function describe(body) {
-  const messages = body?.messages ?? []
+  const messages = messagesOf(body)
   const system = body?.system !== undefined ? textOf(body.system)
-    : textOf(messages.find(message => message.role === 'system' || message.role === 'developer')?.content)
+    : typeof body?.instructions === 'string' ? body.instructions
+      : textOf(messages.find(message => message.role === 'system' || message.role === 'developer')?.content)
   const lastUser = textOf(messages.findLast(message => message.role === 'user')?.content)
   const kind = /context steward/.test(system) ? 'steward'
     : /You keep the long-term memory of one Bot/.test(system) ? 'review'
@@ -55,8 +69,8 @@ function describe(body) {
     messages: messages.length,
     lastUser,
     request: {
-      max_tokens: body?.max_tokens ?? body?.max_completion_tokens,
-      reasoning_effort: body?.reasoning_effort ?? body?.output_config?.effort,
+      max_tokens: body?.max_tokens ?? body?.max_completion_tokens ?? body?.max_output_tokens,
+      reasoning_effort: body?.reasoning_effort ?? body?.reasoning?.effort,
       thinking: body?.thinking?.type,
       think: body?.think,
     },
@@ -65,9 +79,14 @@ function describe(body) {
 
 function tokensOf(usage) {
   if (usage === undefined) return undefined
-  if (usage.input_tokens !== undefined) {
+  // Anthropic keeps the cache fields beside an input count that excludes them.
+  if (usage.cache_read_input_tokens !== undefined || usage.cache_creation_input_tokens !== undefined) {
     const cached = usage.cache_read_input_tokens ?? 0
     return { prompt: usage.input_tokens + cached + (usage.cache_creation_input_tokens ?? 0), cached, output: usage.output_tokens }
+  }
+  // The OpenAI-side protocols fold the cached part into the prompt total.
+  if (usage.input_tokens !== undefined) {
+    return { prompt: usage.input_tokens, cached: usage.input_tokens_details?.cached_tokens ?? 0, output: usage.output_tokens }
   }
   return { prompt: usage.prompt_tokens, cached: usage.prompt_tokens_details?.cached_tokens ?? usage.prompt_cache_hit_tokens ?? 0, output: usage.completion_tokens }
 }
@@ -81,8 +100,8 @@ function prefixAgainst(previous, body) {
   if (previous === undefined) return undefined
   const fields = [...new Set([...Object.keys(previous.body), ...Object.keys(body)])]
     .filter(key => !SIZE_FIELDS.has(key) && JSON.stringify(previous.body[key]) !== JSON.stringify(body[key]))
-  const before = previous.body.messages ?? []
-  const after = body.messages ?? []
+  const before = messagesOf(previous.body)
+  const after = messagesOf(body)
   let same = 0
   while (same < before.length && same < after.length && JSON.stringify(before[same]) === JSON.stringify(after[same])) same += 1
   const result = {
@@ -132,6 +151,17 @@ function answerOf(raw, streamed) {
         if (json.delta?.stop_reason) out.finish = json.delta.stop_reason
         if (json.usage) out.usage = { ...out.usage, ...json.usage }
         break
+      // OpenAI responses: items narrate themselves, and the completed event carries
+      // the usage.
+      case 'response.output_text.delta': out.text += json.delta ?? ''; break
+      case 'response.reasoning_text.delta': out.reasoning += json.delta ?? ''; break
+      case 'response.output_item.added':
+        if (json.item?.type === 'function_call') out.tools.push(json.item.name)
+        break
+      case 'response.completed':
+        out.finish = json.response?.status
+        out.usage = json.response?.usage
+        break
       default:
     }
   }
@@ -144,6 +174,14 @@ function answerOf(raw, streamed) {
           if (block.type === 'tool_use') out.tools.push(block.name)
         }
         out.finish = json.stop_reason
+        out.usage = json.usage
+      } else if (json.type === 'response') {
+        for (const item of json.output ?? []) {
+          if (item.type === 'message') out.text += textOf(item.content)
+          if (item.type === 'reasoning') out.reasoning += textOf(item.summary ?? item.content)
+          if (item.type === 'function_call') out.tools.push(item.name)
+        }
+        out.finish = json.status
         out.usage = json.usage
       } else event(json)
       return
@@ -177,9 +215,12 @@ createServer(async (req, res) => {
   try {
     upstreamResponse = await fetch(`${base}${req.url.replace(/^\/v1/, '')}`, { method: req.method, headers, body: raw.length > 0 ? raw : undefined })
   } catch (error) {
+    // The cause names the transport failure (refused, reset, DNS), which the bare
+    // "fetch failed" does not.
+    const why = `tap: upstream unreachable: ${error.cause?.message ?? error.message}`
     res.writeHead(502, { 'content-type': 'application/json' })
-    res.end(JSON.stringify({ error: { message: `tap: upstream unreachable: ${error.message}` } }))
-    appendFileSync(log, JSON.stringify({ t: new Date().toISOString(), id, path: req.url, error: error.message }) + '\n')
+    res.end(JSON.stringify({ error: { message: why } }))
+    appendFileSync(log, JSON.stringify({ t: new Date().toISOString(), id, path: req.url, error: why }) + '\n')
     return
   }
   const type = upstreamResponse.headers.get('content-type') ?? ''
@@ -192,35 +233,40 @@ createServer(async (req, res) => {
       text += decoder.decode(chunk, { stream: true })
     }
   }
-  res.end()
-  if (body?.messages === undefined) {
+  // The log line is whole once the upstream body ends, so it is written before the
+  // caller's response ends: a consumer that reads the log after its call sees it.
+  if (messagesOf(body).length === 0 && body?.input === undefined) {
     appendFileSync(log, JSON.stringify({ t: new Date().toISOString(), id, path: req.url, status: upstreamResponse.status }) + '\n')
-    return
+  } else {
+    const call = describe(body)
+    const answer = answerOf(text, type.includes('event-stream'))
+    const whole = call.kind !== 'main'
+    const who = call.bot ?? call.kind
+    const prefix = prefixAgainst(previousOf.get(who), body)
+    previousOf.set(who, { id, body })
+    if (bodies) writeFileSync(path.join(bodies, `${id}-${call.kind}-${String(who).replace(/[^\w.-]+/g, '_')}.json`), raw)
+    appendFileSync(log, JSON.stringify({
+      t: new Date().toISOString(),
+      id,
+      ms: Date.now() - started,
+      status: upstreamResponse.status,
+      kind: call.kind,
+      bot: call.bot,
+      messages: call.messages,
+      request: call.request,
+      ...(prefix === undefined ? {} : { prefix }),
+      usage: answer.usage,
+      tokens: tokensOf(answer.usage),
+      finish: answer.finish,
+      lastUser: whole ? call.lastUser : call.lastUser.slice(0, 300),
+      text: answer.text,
+      reasoning: whole ? answer.reasoning : answer.reasoning.slice(0, 200),
+      tools: answer.tools,
+      ...(upstreamResponse.status >= 400 ? { error: text.slice(0, 1000) } : {}),
+    }) + '\n')
   }
-  const call = describe(body)
-  const answer = answerOf(text, type.includes('event-stream'))
-  const whole = call.kind !== 'main'
-  const who = call.bot ?? call.kind
-  const prefix = prefixAgainst(previousOf.get(who), body)
-  previousOf.set(who, { id, body })
-  if (bodies) writeFileSync(path.join(bodies, `${id}-${call.kind}-${String(who).replace(/[^\w.-]+/g, '_')}.json`), raw)
-  appendFileSync(log, JSON.stringify({
-    t: new Date().toISOString(),
-    id,
-    ms: Date.now() - started,
-    status: upstreamResponse.status,
-    kind: call.kind,
-    bot: call.bot,
-    messages: call.messages,
-    request: call.request,
-    ...(prefix === undefined ? {} : { prefix }),
-    usage: answer.usage,
-    tokens: tokensOf(answer.usage),
-    finish: answer.finish,
-    lastUser: whole ? call.lastUser : call.lastUser.slice(0, 300),
-    text: answer.text,
-    reasoning: whole ? answer.reasoning : answer.reasoning.slice(0, 200),
-    tools: answer.tools,
-    ...(upstreamResponse.status >= 400 ? { error: text.slice(0, 1000) } : {}),
-  }) + '\n')
-}).listen(Number(port), '127.0.0.1', () => console.log(`llm-tap: 127.0.0.1:${port} -> ${base}`))
+  res.end()
+}).listen(Number(port), '127.0.0.1', function ready() {
+  // The bound port, which a requested 0 leaves to the system to pick.
+  console.log(`llm-tap: 127.0.0.1:${this.address().port} -> ${base}`)
+})

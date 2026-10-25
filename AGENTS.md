@@ -7,7 +7,9 @@ Instructions for AI coding agents that work on this repository. Human contributo
 DS Bot is a team of long-lived Bots, built on DeepSeek Harness (DSH). It has two parts:
 
 - `ds-bot/`: the Bot features, written as a DSH plugin. The plugin runs in DSH Desktop, in DSH Web and in the desktop app.
-- `app/`: the desktop app for Windows, macOS and Linux. It runs a pinned DSH with the `ds-bot` plugin, in its own profile and its own `DSH_HOME`, and imports an existing team from the user's DSH.
+- `app/`: the desktop app for Windows and macOS. It runs a pinned DSH with the `miasaki-dsbot` plugin, in its own profile and its own `DSH_HOME`, and imports an existing team from the user's DSH.
+
+The plan to stop depending on DSH at runtime is in [docs/plans/2026-10-22-decouple-from-dsh.md](docs/plans/2026-10-22-decouple-from-dsh.md).
 
 The Bot team:
 
@@ -19,7 +21,7 @@ The Bot team:
 
 ## Hard rules
 
-1. **Build on DSH; never patch it.** Bot features use the documented plugin APIs. The desktop app starts DSH only through its documented entry points (`@deepseek-ai/dsh/profile-boot`, the `dsh` CLI). Never patch DeepSeek Harness or depend on files inside a DSH install. If something is missing in DSH, stop and say so; do not work around it with a patch.
+1. **Build on DSH until phase C; never patch it.** Until phase C, Bot features use only the documented plugin APIs, and the desktop app starts DSH only through its documented entry points (`@deepseek-ai/dsh/profile-boot`, the `dsh` CLI). From phase C, follow the [decouple design](docs/plans/2026-10-22-decouple-from-dsh.md) and build the project's own Agent loop and runtime, with no dependence on DSH. At every phase, never patch DeepSeek Harness and never change or depend on files inside a DSH install. If something is missing in DSH before phase C, stop and say so; do not work around it with a patch.
 2. **No secrets.** Never write, print or commit API keys, tokens, cookies or `DSH_HOME` contents. Use the mock model (`ds-bot/dev/mock-llm.mjs`) for tests; it needs no key.
 3. **Only original material.** Do not copy code, text, icons, logos or graphics from other products or websites. Code under a license compatible with Apache 2.0 is the only exception: say where it comes from and add its notice to the `NOTICE` file.
 4. **`client.js` is generated.** Change `ds-bot/src/client/`, then run `npm run build` and commit both files. Never edit `client.js` by hand.

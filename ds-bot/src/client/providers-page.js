@@ -15,17 +15,25 @@ const SHOWN_MODELS = 8
 // A failure in the interface language; the dialog's error line shows it.
 const translated = promise => Promise.resolve(promise).catch((failure) => { throw new Error(hostText(failure?.message ?? String(failure))) })
 
-export function ProvidersPage({ actions, run, Section }) {
+export function ProvidersPage({ actions, run, Section, roster }) {
   const [view, setView] = useState(null)
   const [open, setOpen] = useState(null)
   const [adding, setAdding] = useState(false)
   // Resolves true when the host took it; the page then shows the host's new view.
   const apply = promise => run(translated(promise).then((next) => { if (next?.providers) setView(next) }))
-  useEffect(() => { void apply(actions.providers()) }, [])
+  // A sign-in or sign-out changes the served models (the roster's modelsKey), so the
+  // page refetches with it: the account row follows the account, not the mount-time one.
+  const modelsKey = roster.modelsKey ?? null
+  useEffect(() => { void apply(actions.providers()) }, [modelsKey])
   if (view === null) return null
   if (!view.available) return h('p', { className: 'bt-set-hint' }, t('This DSH cannot set up model providers.'))
+  // The account's row, only where no shell entry of its own exists (the app's own
+  // window): the sign-in while no login is stored — with one, the account route is a
+  // provider row below — and the sign-out with one.
+  const account = view.account?.available === true && !actions.canSignIn?.() ? view.account : null
   return [
     h(Section, { key: 'list', title: t('Model providers · {count}', { count: view.providers.length }) },
+      account ? h(AccountRow, { key: 'account', actions, apply, signedIn: account.status === 'credential-stored' }) : null,
       view.providers.map(provider => h(ProviderRow, {
         key: provider.id, provider, apply, actions,
         open: open === provider.id, onToggle: () => setOpen(open === provider.id ? null : provider.id),
@@ -33,6 +41,34 @@ export function ProvidersPage({ actions, run, Section }) {
       adding ? h(AddProvider, { key: 'add', view, apply, actions, onDone: () => setAdding(false) }) : null),
     adding ? null : h('div', { key: 'add', className: 'bt-actions' }, h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => setAdding(true) }, t('Add a provider'))),
   ]
+}
+
+// The DeepSeek account's entry: the sign-in opens the host-driven dialog, and the
+// browser authorization finishes on its own through the loopback callback. With a
+// login stored the row shows it and offers the sign-out; the served models leave
+// with the login, so it asks once first, as a provider's removal does.
+function AccountRow({ actions, apply, signedIn }) {
+  const [confirm, setConfirm] = useState(false)
+  useEffect(() => { if (!signedIn) setConfirm(false) }, [signedIn])
+  const signOut = () => {
+    setConfirm(false)
+    // The fresh view carries the account the host now reports, so the row turns back
+    // to its sign-in even where the feed's models news cannot reach it.
+    void apply(actions.accountSignOut().then(() => actions.providers()))
+  }
+  return h('div', { className: 'bt-set-row bt-account-page' },
+    h('span', { className: 'bt-set-copy' },
+      h('span', { className: 'bt-secret-title' }, t('DeepSeek account')),
+      h('span', { className: 'bt-set-hint' }, confirm ? t('Sign out of DeepSeek? Bots on its models need another model.')
+        : signedIn ? t('Signed in.')
+        : t("Sign in to use DeepSeek's models without an API key."))),
+    h('span', { className: 'bt-set-control' },
+      confirm ? [
+        h('button', { key: 'keep', type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => setConfirm(false) }, t('Keep')),
+        h('button', { key: 'go', type: 'button', className: 'bt-soft bt-soft-sm bt-secret-danger', onClick: signOut }, t('Sign out')),
+      ] : signedIn
+        ? h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => setConfirm(true) }, t('Sign out'))
+        : h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: actions.ownSignIn }, t('Sign in'))))
 }
 
 function keyState(key) {
@@ -170,6 +206,7 @@ function FormActions({ onCancel, onAdd, ready }) {
 
 export const PROVIDERS_CSS = `
 .bt-provider-id{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px;color:var(--bt-ink-3)}
+.bt-account-page .bt-set-control{align-self:center}
 .bt-provider .bt-set-hint[data-error]{color:var(--bt-danger)}
 .bt-provider-state{display:inline-flex;align-items:center;gap:6px;font-size:12px;line-height:16px;color:var(--bt-ink-2);white-space:nowrap}
 .bt-provider-state::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--bt-ink-3)}

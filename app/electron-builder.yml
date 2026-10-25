@@ -1,6 +1,6 @@
-appId: io.github.fei2411.deepseekbot
+appId: io.github.miasakiii.dsbot
 productName: DeepSeek Bot
-copyright: Copyright 2026 Fei2411 and the DS Bot contributors
+copyright: Copyright 2026 Miasakiii and the DS Bot contributors
 artifactName: DeepSeek-Bot-${version}-${os}-${arch}.${ext}
 directories:
   output: dist-pack
@@ -8,6 +8,9 @@ files:
   - package.json
   - src/**
   - assets/**
+# The own window (phase B1 of the decouple plan): the app's UI, built by `npm run build`
+# into ui/dist, which the plugin's own HTTP outlet serves.
+  - ui/dist/**
 # The Host runs pnpm as a separate Node process to install plugins, so it must be a plain file.
 asarUnpack:
   - node_modules/pnpm/**
@@ -37,27 +40,10 @@ mac:
   hardenedRuntime: false
   icon: assets/icon.png
   category: public.app-category.productivity
-linux:
-  # One AppImage runs on every distribution and updates itself; the deb is for Debian/Ubuntu,
-  # where it avoids Ubuntu 24.04's AppArmor question of an AppImage and adds a menu entry.
-  target:
-    - target: AppImage
-      arch: [x64]
-    - target: deb
-      arch: [x64]
-  # The binary and the deb's menu entry take this name; productName has a space, which a
-  # terminal command should not have.
-  executableName: deepseek-bot
-  # A deb needs a maintainer; package.json's author has no email, so it goes here.
-  maintainer: Fei2411 <https://github.com/Fei2411>
-  # Links the running window to the menu entry (WM_CLASS = app id).
-  syncDesktopName: true
-  icon: assets/icon.png
-  category: Utility
 # Where the installed app looks for updates (app-update.yml in the package). The build writes
 # latest.yml beside the installer; the release workflow attaches both to the GitHub release,
 # so the build itself never publishes (--publish never).
 publish:
   provider: github
-  owner: Fei2411
+  owner: Miasakiii
   repo: DeepSeek-Bot

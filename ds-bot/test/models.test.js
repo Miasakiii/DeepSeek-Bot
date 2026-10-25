@@ -119,6 +119,19 @@ test('a fresh catalog sees a model list changed in DSH settings at once', async 
   assert.deepEqual((await rt.catalog({ fresh: true })).filter(entry => entry.provider === 'deepseek').map(entry => entry.id), ['deepseek-flash', 'deepseek-v4-pro'])
 })
 
+test('a finished account login and a sign-out drop the cached catalog', async () => {
+  const { rt, providers, listeners } = bench({ providers: { stepfun: ['step-5'] } })
+  await rt.catalog()
+  providers['deepseek-account'] = ['deepseek-chat']
+  // The cached catalog still answers without the account route, as before the login.
+  assert.equal((await rt.catalog()).some(entry => entry.provider === 'deepseek-account'), false)
+  listeners.get('credentials/record-updated')?.()
+  assert.deepEqual((await rt.catalog()).filter(entry => entry.provider === 'deepseek-account').map(entry => entry.ref), ['deepseek-account/deepseek-chat'])
+  delete providers['deepseek-account']
+  listeners.get('deepseek-account/signed-out')?.()
+  assert.equal((await rt.catalog()).some(entry => entry.provider === 'deepseek-account'), false)
+})
+
 test('applying a Bot model leaves the DSH default as the user set it', async () => {
   const { rt, selected, current } = bench()
   const bot = { id: 'b1', model: 'deepseek/v4-flash' }

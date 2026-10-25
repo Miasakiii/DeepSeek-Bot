@@ -1,6 +1,8 @@
-// Scripted Anthropic-Messages-compatible mock that drives the Bot team flows
-// (Main Bot setup, create_bot, message_bot round trips, group chat relay, questions)
-// without a real model. Usage: node dev/mock-llm.mjs, then point DEEPSEEK_BASE_URL at it.
+// Scripted mock model that drives the Bot team flows (Main Bot setup, create_bot,
+// message_bot round trips, group chat relay, questions) without a real model. It speaks
+// the Anthropic Messages wire (which DSH's own DeepSeek adapter uses) and the two
+// OpenAI-side wires, so a provider of DS Bot's own directory can point at it too.
+// Usage: node dev/mock-llm.mjs, then point DEEPSEEK_BASE_URL at it.
 //
 // Group turns read only the "This round so far" section of the prompt, so counting goes
 // wrong if the round and older messages are not kept apart. Usage is estimated from the
@@ -662,6 +664,138 @@ function sse(res, payload) {
   res.write(`event: ${payload.type}\ndata: ${JSON.stringify(payload)}\n\n`)
 }
 
+// ---- the two OpenAI-side wires ----
+
+// The text of a message on either OpenAI wire: a plain string, or the text parts.
+const openAiText = content => typeof content === 'string' ? content
+  : Array.isArray(content)
+    ? content.filter(part => part?.type === 'text' || part?.type === 'input_text' || part?.type === 'output_text').map(part => part.text ?? '').join('\n')
+    : ''
+
+// Images in a request on either wire: Anthropic's image blocks, or the OpenAI-side
+// image parts.
+const countImages = body => (body.messages ?? body.input ?? []).reduce((count, message) => {
+  const content = Array.isArray(message.content) ? message.content : []
+  return count + content.filter(part => part?.type === 'image' || part?.type === 'image_url' || part?.type === 'input_image').length
+}, 0)
+
+// A chat-completions request in the shape the scenario engine reads: the leading
+// system message becomes `system`, tool calls and results become the block shapes the
+// engine walks, and the function tool list becomes plain names.
+function fromOpenAi(body) {
+  let system = ''
+  const messages = []
+  for (const message of body.messages ?? []) {
+    const text = openAiText(message.content)
+    if (message.role === 'system') {
+      if (text !== '') system += (system === '' ? '' : '\n\n') + text
+    } else if (message.role === 'tool') {
+      messages.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: message.tool_call_id, content: text }] })
+    } else if (message.role === 'assistant') {
+      const content = text === '' ? [] : [{ type: 'text', text }]
+      for (const call of message.tool_calls ?? []) {
+        content.push({ type: 'tool_use', id: call.id, name: call.function?.name ?? '', input: JSON.parse(call.function?.arguments || '{}') })
+      }
+      messages.push({ role: 'assistant', content })
+    } else {
+      messages.push({ role: 'user', content: text })
+    }
+  }
+  return { ...body, ...(system === '' ? {} : { system }), messages, tools: (body.tools ?? []).map(entry => entry.function ?? entry) }
+}
+
+// A responses request in the same shape: the instructions become `system`, the input
+// items become messages, and the function tool list becomes plain names.
+function fromResponses(body) {
+  const messages = []
+  for (const item of Array.isArray(body.input) ? body.input : []) {
+    if (item.type === 'function_call') {
+      const call = { type: 'tool_use', id: item.call_id, name: item.name ?? '', input: JSON.parse(item.arguments || '{}') }
+      const last = messages.at(-1)
+      if (last?.role === 'assistant') last.content.push(call)
+      else messages.push({ role: 'assistant', content: [call] })
+    } else if (item.type === 'function_call_output') {
+      messages.push({ role: 'user', content: [{ type: 'tool_result', tool_use_id: item.call_id, content: String(item.output ?? '') }] })
+    } else if (item.role === 'assistant') {
+      const text = openAiText(item.content)
+      messages.push({ role: 'assistant', content: text === '' ? [] : [{ type: 'text', text }] })
+    } else {
+      messages.push({ role: 'user', content: openAiText(item.content) })
+    }
+  }
+  return {
+    ...body,
+    ...(typeof body.instructions === 'string' && body.instructions !== '' ? { system: body.instructions } : {}),
+    messages,
+    tools: (body.tools ?? []).map(entry => ({ name: entry.name, description: entry.description })),
+  }
+}
+
+// Each wire's own error body; the status is what the plugin's client classifies.
+const wireError = (wire, type, message) => (wire === 'anthropic'
+  ? { type: 'error', error: { type, message } }
+  : { error: { message, type, ...(wire === 'responses' ? { code: type } : {}) } })
+
+// The chat-completions event stream for one decided answer: reasoning and text as
+// content deltas, tool calls as call deltas, then the finish and the usage chunk.
+// Usage follows the same folded convention the plugin's reader assumes: prompt_tokens
+// includes the cached part, which prompt_tokens_details names.
+async function openAiStream(res, id, out, tokens, cached) {
+  const chunk = delta => res.write(`data: ${JSON.stringify({ id: `mock-${id}`, object: 'chat.completion.chunk', model: 'mock-model', choices: [{ index: 0, delta }] })}\n\n`)
+  let index = 0
+  let usedTool = false
+  for (const block of out) {
+    if (block.type === 'text') {
+      if (block.text === '') continue
+      if (block.slow) {
+        for (const piece of block.text.match(/.{1,4}/gsu)) {
+          chunk({ content: piece })
+          await new Promise(resolve => setTimeout(resolve, 120))
+        }
+      } else {
+        chunk({ content: block.text })
+      }
+    } else if (block.type === 'thinking') {
+      chunk({ reasoning_content: block.thinking })
+    } else {
+      usedTool = true
+      chunk({ tool_calls: [{ index, id: `call-${id}-${index}`, type: 'function', function: { name: block.name, arguments: '' } }] })
+      chunk({ tool_calls: [{ index, function: { arguments: JSON.stringify(block.input) } }] })
+    }    index += 1
+  }
+  if (index === 0) chunk({ content: '' })
+  chunk({})
+  res.write(`data: ${JSON.stringify({ id: `mock-${id}`, object: 'chat.completion.chunk', model: 'mock-model', choices: [{ index: 0, delta: {}, finish_reason: usedTool ? 'tool_calls' : 'stop' }] })}\n\n`)
+  const completion = Math.ceil(JSON.stringify(out).length / 3)
+  res.write(`data: ${JSON.stringify({ id: `mock-${id}`, object: 'chat.completion.chunk', model: 'mock-model', choices: [], usage: { prompt_tokens: tokens, completion_tokens: completion, total_tokens: tokens + completion, prompt_tokens_details: { cached_tokens: cached } } })}\n\n`)
+  res.write('data: [DONE]\n\n')
+}
+
+// The responses event stream for one decided answer: output items narrated as they
+// open, named deltas for their text, and the completed event carrying usage.
+async function responsesStream(res, id, out, tokens, cached) {
+  const event = (type, payload) => res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...payload })}\n\n`)
+  let index = 0
+  for (const block of out) {
+    if (block.type === 'text' && block.text !== '') {
+      await event('response.output_item.added', { output_index: index, item: { type: 'message', id: `msg-${id}-${index}` } })
+      await event('response.output_text.delta', { output_index: index, delta: block.text })
+      await event('response.output_item.done', { output_index: index, item: { type: 'message', id: `msg-${id}-${index}`, content: [{ type: 'output_text', text: block.text }] } })
+    } else if (block.type === 'thinking') {
+      await event('response.output_item.added', { output_index: index, item: { type: 'reasoning', id: `rs-${id}-${index}` } })
+      await event('response.reasoning_text.delta', { output_index: index, delta: block.thinking })
+      await event('response.output_item.done', { output_index: index, item: { type: 'reasoning', id: `rs-${id}-${index}` } })
+    } else if (block.type === 'tool_use') {
+      await event('response.output_item.added', { output_index: index, item: { type: 'function_call', call_id: `call-${id}-${index}`, name: block.name } })
+      await event('response.function_call_arguments.delta', { output_index: index, delta: JSON.stringify(block.input) })
+      await event('response.output_item.done', { output_index: index, item: { type: 'function_call', call_id: `call-${id}-${index}`, name: block.name, arguments: JSON.stringify(block.input) } })
+    }
+    index += 1
+  }
+  const completion = Math.ceil(JSON.stringify(out).length / 3)
+  await event('response.completed', { response: { id: `mock-${id}`, usage: { input_tokens: tokens, output_tokens: completion, total_tokens: tokens + completion, input_tokens_details: { cached_tokens: cached } } } })
+}
+
 // An Ollama-shaped search API, for checking a `searchApis` entry declared in config.
 function searchApi(req, res) {
   let raw = ''
@@ -684,7 +818,15 @@ const server = createServer((req, res) => {
     res.end(JSON.stringify({ data: [{ type: 'model', id: 'mock-model', display_name: 'Mock Model' }, { type: 'model', id: 'mock-model-mini', display_name: 'Mock Model Mini' }], has_more: false }))
     return
   }
-  if (req.method !== 'POST' || !path.endsWith('/v1/messages')) {
+  // The three wires an own provider can speak; the scenario engine reads one shape, so
+  // the OpenAI-side requests are translated before it and logged in that shape. The
+  // endpoint root a user types may or may not carry /v1, so the route matches on its
+  // last part.
+  const wire = path.endsWith('/messages') ? 'anthropic'
+    : path.endsWith('/chat/completions') ? 'openai'
+      : path.endsWith('/responses') ? 'responses'
+        : undefined
+  if (req.method !== 'POST' || wire === undefined) {
     res.writeHead(404, { 'content-type': 'application/json' })
     res.end(JSON.stringify({ error: { message: `no route ${req.method} ${req.url}` } }))
     return
@@ -693,14 +835,14 @@ const server = createServer((req, res) => {
   req.setEncoding('utf8')
   req.on('data', chunk => { raw += chunk })
   req.on('end', () => {
-    const body = JSON.parse(raw)
-    const images = (body.messages ?? []).reduce((count, message) => count
-      + (Array.isArray(message.content) ? message.content.filter(block => block?.type === 'image').length : 0), 0)
+    const asked = JSON.parse(raw)
+    const images = countImages(asked)
+    const body = wire === 'anthropic' ? asked : wire === 'openai' ? fromOpenAi(asked) : fromResponses(asked)
     const id = ++seq
     if (REJECT_IMAGES && images > 0) {
       appendFileSync(LOG, JSON.stringify({ t: new Date().toISOString(), id, images, rejectedImages: true, messages: body.messages?.length ?? 0, last: textOf(body.messages?.at(-1)?.content).slice(0, LOG_CHARS) }) + '\n')
       res.writeHead(400, { 'content-type': 'application/json' })
-      res.end(JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message: 'mock: request with images rejected' } }))
+      res.end(JSON.stringify(wireError(wire, 'invalid_request_error', 'mock: request with images rejected')))
       return
     }
     const search = asksNativeSearch(body)
@@ -708,19 +850,19 @@ const server = createServer((req, res) => {
     if (out === 'overflow') {
       appendFileSync(LOG, JSON.stringify({ t: new Date().toISOString(), id, images, overflow: true, messages: body.messages?.length ?? 0, last: textOf(body.messages?.at(-1)?.content).slice(0, LOG_CHARS) }) + '\n')
       res.writeHead(400, { 'content-type': 'application/json' })
-      res.end(JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message: 'prompt is too long: maximum context length exceeded' } }))
+      res.end(JSON.stringify(wireError(wire, 'invalid_request_error', 'prompt is too long: maximum context length exceeded')))
       return
     }
     if (out === 'auth') {
       appendFileSync(LOG, JSON.stringify({ t: new Date().toISOString(), id, images, auth: true, messages: body.messages?.length ?? 0 }) + '\n')
       res.writeHead(401, { 'content-type': 'application/json' })
-      res.end(JSON.stringify({ type: 'error', error: { type: 'authentication_error', message: 'mock: invalid x-api-key sk-mock1234567890' } }))
+      res.end(JSON.stringify(wireError(wire, 'authentication_error', 'mock: invalid x-api-key sk-mock1234567890')))
       return
     }
     if (out === 'fail') {
       appendFileSync(LOG, JSON.stringify({ t: new Date().toISOString(), id, images, fail: true, messages: body.messages?.length ?? 0 }) + '\n')
       res.writeHead(400, { 'content-type': 'application/json' })
-      res.end(JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message: 'mock: this note request fails on purpose' } }))
+      res.end(JSON.stringify(wireError(wire, 'invalid_request_error', 'mock: this note request fails on purpose')))
       return
     }
     // Usage follows the model input's size (about three characters per token, all but
@@ -741,39 +883,45 @@ const server = createServer((req, res) => {
     }
     setTimeout(async () => {
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' })
-      sse(res, { type: 'message_start', message: { id: `mock-${id}`, type: 'message', role: 'assistant', model: body.model ?? 'mock', content: [], usage: { input_tokens: tokens - cached, output_tokens: 0, cache_read_input_tokens: cached } } })
-      let index = 0
-      let usedTool = false
-      for (const block of out) {
-        if (block.type === 'text') {
-          if (block.text === '') continue
-          sse(res, { type: 'content_block_start', index, content_block: { type: 'text', text: '' } })
-          if (block.slow) {
-            for (const piece of block.text.match(/.{1,4}/gsu)) {
-              sse(res, { type: 'content_block_delta', index, delta: { type: 'text_delta', text: piece } })
-              await new Promise(resolve => setTimeout(resolve, 120))
+      if (wire === 'anthropic') {
+        sse(res, { type: 'message_start', message: { id: `mock-${id}`, type: 'message', role: 'assistant', model: body.model ?? 'mock', content: [], usage: { input_tokens: tokens - cached, output_tokens: 0, cache_read_input_tokens: cached } } })
+        let index = 0
+        let usedTool = false
+        for (const block of out) {
+          if (block.type === 'text') {
+            if (block.text === '') continue
+            sse(res, { type: 'content_block_start', index, content_block: { type: 'text', text: '' } })
+            if (block.slow) {
+              for (const piece of block.text.match(/.{1,4}/gsu)) {
+                sse(res, { type: 'content_block_delta', index, delta: { type: 'text_delta', text: piece } })
+                await new Promise(resolve => setTimeout(resolve, 120))
+              }
+            } else {
+              sse(res, { type: 'content_block_delta', index, delta: { type: 'text_delta', text: block.text } })
             }
+          } else if (block.type === 'thinking') {
+            sse(res, { type: 'content_block_start', index, content_block: { type: 'thinking', thinking: '' } })
+            sse(res, { type: 'content_block_delta', index, delta: { type: 'thinking_delta', thinking: block.thinking } })
+            sse(res, { type: 'content_block_delta', index, delta: { type: 'signature_delta', signature: 'mock' } })
           } else {
-            sse(res, { type: 'content_block_delta', index, delta: { type: 'text_delta', text: block.text } })
+            usedTool = true
+            sse(res, { type: 'content_block_start', index, content_block: { type: 'tool_use', id: `call-${id}-${index}`, name: block.name, input: {} } })
+            sse(res, { type: 'content_block_delta', index, delta: { type: 'input_json_delta', partial_json: JSON.stringify(block.input) } })
           }
-        } else if (block.type === 'thinking') {
-          sse(res, { type: 'content_block_start', index, content_block: { type: 'thinking', thinking: '' } })
-          sse(res, { type: 'content_block_delta', index, delta: { type: 'thinking_delta', thinking: block.thinking } })
-          sse(res, { type: 'content_block_delta', index, delta: { type: 'signature_delta', signature: 'mock' } })
-        } else {
-          usedTool = true
-          sse(res, { type: 'content_block_start', index, content_block: { type: 'tool_use', id: `call-${id}-${index}`, name: block.name, input: {} } })
-          sse(res, { type: 'content_block_delta', index, delta: { type: 'input_json_delta', partial_json: JSON.stringify(block.input) } })
+          sse(res, { type: 'content_block_stop', index })
+          index += 1
         }
-        sse(res, { type: 'content_block_stop', index })
-        index += 1
+        if (index === 0) {
+          sse(res, { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } })
+          sse(res, { type: 'content_block_stop', index: 0 })
+        }
+        sse(res, { type: 'message_delta', delta: { stop_reason: out.stop ?? (usedTool ? 'tool_use' : 'end_turn'), stop_sequence: null }, usage: { output_tokens: Math.ceil(JSON.stringify(out).length / 3) } })
+        sse(res, { type: 'message_stop' })
+      } else if (wire === 'openai') {
+        await openAiStream(res, id, out, tokens, cached)
+      } else {
+        await responsesStream(res, id, out, tokens, cached)
       }
-      if (index === 0) {
-        sse(res, { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } })
-        sse(res, { type: 'content_block_stop', index: 0 })
-      }
-      sse(res, { type: 'message_delta', delta: { stop_reason: out.stop ?? (usedTool ? 'tool_use' : 'end_turn'), stop_sequence: null }, usage: { output_tokens: Math.ceil(JSON.stringify(out).length / 3) } })
-      sse(res, { type: 'message_stop' })
       res.end()
     }, (out.delay ?? (isSummary(body) ? SUMMARY_DELAY : DELAY)) + Math.random() * JITTER)
   })

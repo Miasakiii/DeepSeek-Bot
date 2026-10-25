@@ -1,5 +1,6 @@
 import { createElement as h, Fragment, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { OwnSignInDialog } from './account-dialog.js'
 import { CommandPalette } from './palette.js'
 import { NewChat } from './new-chat.js'
 import { ExchangeDialog } from './exchange.js'
@@ -36,6 +37,9 @@ export function Overlays({ useRoster, useUi, useSessions, useSessionStatus, useA
   }, [ui.details, ui.view, ui.renaming, ui.tab])
   const pane = open ?? kept
   const [settings, settingsLeaving] = useLinger(ui.settings, DIALOG_EXIT_MS)
+  // The own sign-in rides the same linger: the kept token keeps the dialog mounted
+  // while its exit plays.
+  const [signIn, signInLeaving] = useLinger(ui.signIn && actions.ownSignIn ? ui.signIn : null, DIALOG_EXIT_MS)
   // The memory dialog shows a Bot's memory or a group chat's.
   const memoryOwner = (id) => {
     const bot = roster.byId[id]
@@ -53,6 +57,9 @@ export function Overlays({ useRoster, useUi, useSessions, useSessionStatus, useA
     ui.exchange ? createPortal(h(ExchangeDialog, { pair: ui.exchange, roster, actions }), document.body) : null,
     ui.voice ? createPortal(h(VoiceMode, { key: ui.voice, sessionId: ui.voice, roster, actions, useSessions, useSessionStatus }), document.body) : null,
     menu ? createPortal(h(ContextMenu, { key: `${menu.kind ?? ''}:${menu.id}:${menu.x}:${menu.y}`, menu, roster, actions, leaving: menuLeaving }), document.body) : null,
+    // The own sign-in, only where no shell carries its account plugin: `ownSignIn`
+    // exists in the app's own window alone, so the DSH forms keep their own dialog.
+    signIn ? createPortal(h(OwnSignInDialog, { open: signIn, actions, leaving: signInLeaving }), document.body) : null,
     settings ? createPortal(h(SettingsDialog, { page: settings.page, id: settings.id, roster, actions, useUpdate, leaving: settingsLeaving }), document.body) : null,
     owner ? createPortal(h(MemoryDialog, { key: owner.id, owner, actions, leaving: memoryLeaving }), document.body) : null)
 }

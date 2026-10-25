@@ -21,6 +21,7 @@ import { installHeaderNavigation } from './header-navigation.js'
 import { AssistantCell, TriggerCell, TurnProcessCell, Nothing, TurnTailCell, ToolCell } from './cells.js'
 import { Overlays } from './overlays.js'
 import { createBotBrowsers, serveBrowserReads } from './bot-browsers.js'
+import { installOwnBrowserBridge } from './browser-bridge.js'
 import { BROWSER_CSS } from './browser-pane.js'
 import { SECRET_CSS, SecretDock } from './secret-card.js'
 import { MODEL_CSS, ModelChoiceDock, DeepSeekSignIn } from './model-menu.js'
@@ -244,9 +245,11 @@ export function apply(ctx) {
     }, 'ds-bot: own app update state')
   }
 
-  // Bot browsers need a webview bridge: DSH Desktop's, or the desktop app's of the
-  // same shape. The host serves read_browser only in those two (`browser` in the state).
-  const bridge = (window.dshDesktop?.protocolVersion === 1 ? window.dshDesktop.browser : globalThis.dsBotApp?.browser) ?? null
+  // Bot browsers need the Desktop shell's webview bridge, and the host serves
+  // read_browser only in the Desktop profile (`browser` in the state). The desktop
+  // app's own window has no shell bridge, so the page provides one there first.
+  installOwnBrowserBridge(window)
+  const bridge = window.dshDesktop?.protocolVersion === 1 ? window.dshDesktop.browser ?? null : null
   const browsers = bridge ? createBotBrowsers({ bridge, createSource }) : null
   if (browsers) {
     ctx.effect(() => {
@@ -579,6 +582,17 @@ export function apply(ctx) {
   // DSH's own settings: models, providers, keys and its plugins.
   actions.openHarnessSettings = openHarnessSettings
   actions.openHarnessOnboarding = openHarnessOnboarding
+  // The window's own Models page: the providers DS Bot serves, their keys and their
+  // models, on the plugin's own endpoints. A window that also has DSH's settings keeps
+  // its Harness settings row beside this page, and the model menu's "Models and
+  // providers…" opens it. The mutating calls pull the team afterwards, so a model the
+  // change makes available reaches the pickers at once.
+  actions.providers = () => call('providers')
+  actions.setProviderKey = (provider, value) => after(call('provider-key', { provider, value }))
+  actions.addProvider = body => after(call('provider-add', body))
+  actions.providerModels = body => call('provider-models', body)
+  actions.removeProvider = provider => after(call('provider-remove', { provider }))
+  actions.openModels = () => actions.openSettings('models')
   actions.voiceSetup = () => {
     const navigation = ctx.get('pluginNavigation')
     return navigation ? () => navigation.openBundle(VOICE_BUNDLE) : null

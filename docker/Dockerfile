@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Build: installs dsh and packs the plugin, then initializes a template DSH_HOME
-# (the web profile with ds-bot installed) that the entrypoint copies into /data
+# (the web profile with the plugin installed) that the entrypoint copies into /data
 # on first start. Build context is the repository root:
 #   docker build -f docker/Dockerfile -t ds-bot:local .
 FROM node:24-bookworm-slim AS build
@@ -21,8 +21,8 @@ COPY ds-bot/ /src/ds-bot/
 # and let `dsh plugin add` set up the web profile from dsh's own template.
 RUN cd /src/ds-bot \
     && npm pack --pack-destination /tmp \
-    && mv /tmp/ds-bot-*.tgz /tmp/ds-bot.tgz \
-    && DSH_HOME=/opt/dsh-template dsh plugin --profile web add /tmp/ds-bot.tgz
+    && mv /tmp/miasaki-dsbot-*.tgz /tmp/miasaki-dsbot.tgz \
+    && DSH_HOME=/opt/dsh-template dsh plugin --profile web add /tmp/miasaki-dsbot.tgz
 
 FROM node:24-bookworm-slim
 
@@ -48,5 +48,5 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 LABEL org.opencontainers.image.title="DS Bot" \
       org.opencontainers.image.description="A team of long-lived Bots on DeepSeek Harness, served by dsh web" \
-      org.opencontainers.image.source="https://github.com/Fei2411/DeepSeek-Bot" \
+      org.opencontainers.image.source="https://github.com/Miasakiii/DeepSeek-Bot" \
       org.opencontainers.image.licenses="Apache-2.0"
