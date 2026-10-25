@@ -274,14 +274,14 @@ export function createTeam() {
     }
     wakeUpdate = checkUpdates
     void checkUpdates()
-    // The app's own updater rides the page's bridge, which main.js installed before
-    // this runs: its state sits beside the host's answer, where the update card
-    // matches it to the verified DSH. In a DSH window the plugin's client does this.
-    const appUpdates = window.dshDesktop?.protocolVersion === 1 ? window.dshDesktop.updates ?? null : null
+    // The app's own updater rides the preload's `dsBotApp.updates`: its state sits
+    // beside the host's answer as ownApp, where the About row reads it. In a DSH
+    // window the plugin's client does this itself.
+    const appUpdates = globalThis.dsBotApp?.updates ?? null
     let stopAppUpdates = () => {}
-    if (appUpdates?.status && appUpdates.subscribe) {
-      const take = (app) => { if (!stopped && app) update.set(previous => ({ ...previous, app })) }
-      void appUpdates.status().then(take, () => {})
+    if (appUpdates?.state && appUpdates.subscribe) {
+      const take = (ownApp) => { if (!stopped && ownApp) update.set(previous => ({ ...previous, ownApp })) }
+      void appUpdates.state().then(take, () => {})
       const unsubscribe = appUpdates.subscribe(take)
       stopAppUpdates = () => unsubscribe?.()
     }

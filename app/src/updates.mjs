@@ -82,9 +82,11 @@ function appStatus() {
   const listeners = new Set()
   return {
     // A stage of the same update keeps the version it found; passing null clears it.
-    set(phase, version = status.version) {
-      if (phase === status.phase && version === status.version) return
-      status = { phase, version }
+    // A release's stage carries the page its Download button opens, and the next
+    // stage without one clears it.
+    set(phase, version = status.version, page = status.page) {
+      if (phase === status.phase && version === status.version && page === status.page) return
+      status = { phase, version, ...(typeof page === 'string' ? { page } : {}) }
       for (const listener of listeners) listener(status)
     },
     status: () => Promise.resolve({ ...status }),
@@ -130,10 +132,10 @@ export function watchReleases({ current, arch, fetch = globalThis.fetch, ask, op
           if (found === undefined || isNewer(version, found.version)) found = { version, page: release.html_url }
         }
         if (found === undefined) {
-          app.set('idle', null)
+          app.set('idle', null, null)
           return null
         }
-        app.set('available', found.version)
+        app.set('available', found.version, found.page)
         log.info(`DeepSeek Bot: update ${found.version} available`)
         if (ask !== undefined && asked !== found.version) {
           asked = found.version
@@ -150,7 +152,7 @@ export function watchReleases({ current, arch, fetch = globalThis.fetch, ask, op
   }
   check()
   const timer = setInterval(check, CHECK_EVERY_MS)
-  return { stop: () => { clearInterval(timer) }, latest: () => latest, status: app.status, subscribe: app.subscribe }
+  return { stop: () => { clearInterval(timer) }, latest: () => latest, check, status: app.status, subscribe: app.subscribe }
 }
 
 /**
@@ -166,8 +168,9 @@ export function watchReleases({ current, arch, fetch = globalThis.fetch, ask, op
  * @returns {{
  *   stop: () => void,
  *   latest: () => Promise<{ version: string, downloaded: Promise<boolean> } | null>,
+ *   check: () => void,
  *   install: () => Promise<void>,
- *   status: () => Promise<{ phase: string, version: string | null }>,
+ *   status: () => Promise<{ phase: string, version: string | null, page?: string }>,
  *   subscribe: (listener: (status: { phase: string, version: string | null }) => void) => () => void,
  * }} `latest` is what the newest check found: the version and whether its download finished.
  *   `install` stops the Host and runs the installer, which opens the app again. `status`
@@ -208,5 +211,5 @@ export function watchUpdates({ updater, beforeInstall, ask, feed, log = console 
   }
   check()
   const timer = setInterval(check, CHECK_EVERY_MS)
-  return { stop: () => { clearInterval(timer) }, latest: () => latest, install, status: app.status, subscribe: app.subscribe }
+  return { stop: () => { clearInterval(timer) }, latest: () => latest, check, install, status: app.status, subscribe: app.subscribe }
 }

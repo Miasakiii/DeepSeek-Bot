@@ -288,11 +288,11 @@ describe('watchReleases', () => {
     })
     t.after(updates.stop)
     await updates.latest()
-    assert.deepEqual(await updates.status(), { phase: 'available', version: '0.1.9' })
+    assert.deepEqual(await updates.status(), { phase: 'available', version: '0.1.9', page: 'https://github.com/Miasakiii/DeepSeek-Bot/releases/tag/v0.1.9' })
     answer = 'fail'
     t.mock.timers.tick(4 * 60 * 60_000)
     await updates.latest()
-    assert.deepEqual(await updates.status(), { phase: 'available', version: '0.1.9' })
+    assert.deepEqual(await updates.status(), { phase: 'available', version: '0.1.9', page: 'https://github.com/Miasakiii/DeepSeek-Bot/releases/tag/v0.1.9' })
     answer = '0.1.7'
     t.mock.timers.tick(4 * 60 * 60_000)
     await updates.latest()

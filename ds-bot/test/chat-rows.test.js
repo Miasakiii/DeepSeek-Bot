@@ -11,7 +11,7 @@ const bundle = await build({
 })
 const module = { exports: {} }
 runInNewContext(bundle.outputFiles[0].text, {
-  module, exports: module.exports, Intl, Date,
+  module, exports: module.exports, Intl, Date, TextEncoder,
   require: (name) => {
     const platform = {
       react: {
@@ -43,6 +43,20 @@ test('a Bot\'s messages in a row are one block', () => {
   assert.deepEqual(shape(ChatRows({ items, sessionId: 'b', roster, actions: {} })), ['EarlierUser', 'bot:one+two', 'EarlierUser', 'bot:three'])
 })
 
+test('a view row renders as a view card from its blueprint', () => {
+  const items = [
+    { kind: 'user', text: 'show me', time: MINUTE },
+    { kind: 'view', title: 'A long note', view: { type: 'stack', children: [0, 1, 2, 3].map(() => ({ type: 'text', text: 'x'.repeat(1900) })) }, callId: 'c1', time: 2 * MINUTE },
+    { kind: 'bot', text: 'done', time: 3 * MINUTE },
+  ]
+  const rows = [...ChatRows({ items, sessionId: 'b', roster, actions: {} })]
+  assert.deepEqual(shape(rows), ['EarlierUser', 'WidgetCell', 'bot:done'])
+  // The card draws the blueprint, not nothing: run the cell and look inside.
+  const cell = rows[1]
+  const rendered = cell.type(cell.props)
+  assert.equal(rendered.props.className, 'bt-q-inline')
+})
+
 test('with the clock, a time separator sits above the first entry and after each pause of half an hour', () => {
   const items = [
     { kind: 'divider', time: 0 },
@@ -52,31 +66,6 @@ test('with the clock, a time separator sits above the first entry and after each
     { kind: 'user', text: 'back', time: 75 * MINUTE },
   ]
   assert.deepEqual(shape(ChatRows({ items, sessionId: 'b', roster, actions: {}, clock: true })), ['PartLine', 'clock', 'EarlierUser', 'bot:one+two', 'clock', 'EarlierUser'])
-})
-
-test('a view entry an earlier page lists draws its card, read-only', () => {
-  const items = [
-    { kind: 'user', text: 'status?', time: MINUTE },
-    { kind: 'view', title: 'Status', view: { type: 'metric', label: 'Done', value: 3 }, time: 2 * MINUTE },
-    { kind: 'bot', text: 'all set', time: 2 * MINUTE },
-  ]
-  const rows = ChatRows({ items, sessionId: 'b', roster, actions: {} })
-  // The rows come out of the VM, so the mapped array is rebuilt on this side before deepEqual.
-  const kinds = [...rows].map(row => row.props.className === 'bt-q-inline' ? 'view' : row.type.name === 'Bubbles' ? `bot:${row.props.texts.join('+')}` : row.type.name)
-  assert.deepEqual(kinds, ['EarlierUser', 'view', 'bot:all set'])
-  const card = rows[1].children[0]
-  assert.equal(card.type.name, 'WidgetCard')
-  assert.equal(card.props.title, 'Status')
-  assert.deepEqual(card.props.view, items[1].view)
-  assert.equal(card.props.onSubmit, undefined)
-  // Rendered, the card is the chrome every view wears with its title and nothing to submit.
-  const drawn = card.type(card.props)
-  assert.equal(drawn.props.className, 'bt-q')
-  const [head, body] = drawn.children
-  assert.equal(head.children[0].children[0].children[0], 'Status')
-  assert.equal(head.children[1].children[0], 'View')
-  assert.equal(body.type.name, 'WidgetView')
-  assert.deepEqual(body.props.view, items[1].view)
 })
 
 test('a reasoning row the reader opened stays open when the turn moves it to a later step', () => {

@@ -25,6 +25,7 @@ const IPC = {
   caption: 'ds-bot:caption-colors', nativeTheme: 'ds-bot:native-theme', fullscreen: 'ds-bot:fullscreen',
   dataLocation: 'ds-bot:data-location', moveData: 'ds-bot:move-data', teamWorkspace: 'ds-bot:team-workspace',
   updatesStatus: 'ds-bot:updates-status', updatesChanged: 'ds-bot:updates-changed',
+  updatesCheck: 'ds-bot:updates-check', updatesInstall: 'ds-bot:updates-install', updatesOpen: 'ds-bot:updates-open',
 }
 const MOVE_PROBLEMS = { drive: 'moveDrive', nested: 'moveNested', workspace: 'moveWorkspace', program: 'inProgram', notEmpty: 'moveNotEmpty' }
 const UPDATE_CHECK_WAIT_MS = 15_000
@@ -137,7 +138,7 @@ async function start() {
     // update can still come when this version's Host does not start.
     updates = startUpdates()
     // The window pulls the update state when it loads; every change after that is pushed.
-    updates?.subscribe(status => { mainWindow?.webContents.send(IPC.updatesChanged, status) })
+    updates?.subscribe(status => { mainWindow?.webContents.send(IPC.updatesChanged, clientUpdateState(status)) })
     host = newHost()
     return host.start()
   })()
@@ -162,6 +163,22 @@ async function start() {
   ipcMain.handle(IPC.updatesStatus, (event) => {
     assertWindow(event)
     return updatesSnapshot()
+  })
+  ipcMain.handle(IPC.updatesCheck, (event) => {
+    assertWindow(event)
+    updates?.check()
+  })
+  ipcMain.handle(IPC.updatesInstall, async (event) => {
+    assertWindow(event)
+    const state = await updatesSnapshot()
+    if (state.phase === 'downloaded') await updates?.install()
+  })
+  ipcMain.handle(IPC.updatesOpen, async (event) => {
+    assertWindow(event)
+    const state = await updatesSnapshot()
+    if (state.phase === 'available' && typeof state.page === 'string' && state.page.startsWith('https://')) {
+      await shell.openExternal(state.page)
+    }
   })
   if (process.platform === 'win32') {
     // Windows ignores the alpha of the caption buttons' color, so they take the opaque color
@@ -328,8 +345,15 @@ async function moveData(workspace) {
 const notePage = message => `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html><meta charset="utf-8"><meta name="color-scheme" content="light dark">
 <body style="margin:0;height:100vh;display:grid;place-items:center;font:14px system-ui,sans-serif;background:Canvas;color:CanvasText">${message.replace(/[&<>]/gu, char => `&#${String(char.charCodeAt(0))};`)}</body>`)}`
 
+// The card's terms for the app's own update state: the updater's stage names map onto
+// the About row's vocabulary, and a release carries the page its Download button opens.
+const clientUpdateState = (status) => {
+  const phase = { idle: 'current', ready: 'downloaded', error: 'failed' }[status.phase] ?? status.phase
+  return { phase, version: status.version, ...(typeof status.page === 'string' ? { page: status.page } : {}) }
+}
+
 // A run without its own updater (a development run) reports that nothing is going on.
-const updatesSnapshot = () => updates?.status() ?? Promise.resolve({ phase: 'idle', version: null })
+const updatesSnapshot = () => (updates?.status() ?? Promise.resolve({ phase: 'idle', version: null })).then(clientUpdateState)
 
 // Windows updates itself; macOS asks to download the new version. Throwaway runs check only a
 // given feed and never ask.

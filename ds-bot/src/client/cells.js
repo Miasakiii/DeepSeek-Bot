@@ -6,15 +6,18 @@ import { linkMentions, mentionTarget, dayLabel, contentText, stripHeader, isHidd
 import { SmileIcon, ReplyIcon, DotsIcon, CheckIcon, DownloadIcon, CopyIcon, MemoryIcon } from './icons.js'
 import { colorOf, toolState, BotMark, RoomAvatar } from './mark.js'
 import { SettledQuestion, PendingQuestion } from './questions.js'
-import { AnsweredReply, WidgetCard, WidgetCell } from './widget-cell.js'
+import { AnsweredReply, WidgetCell } from './widget-cell.js'
 import { SecretToolCell } from './secret-card.js'
 import { t } from './i18n.js'
 import { call } from './api.js'
 import { failureLabel } from './diagnostics.js'
-import { turnReasoning, thinkingStep } from './turn-reasoning.js'
+import { turnReasoning, thinkingStep, opensReply } from './turn-reasoning.js'
 import { FOLD_AT, FOLD_HUGE, stripLongNote, useFold } from './fold.js'
 import { noHover, useViewport, viewBottom } from './motion.js'
 import { heldCardKey } from './sources.js'
+import { BtwCardView } from './btw.js'
+import { partIndexOf, withBtwRows } from './btw-model.js'
+import { layoutOf, thinkingShown } from './themes.js'
 
 export { clockLabel }
 
@@ -223,14 +226,14 @@ export function AssistantCell({ node, groupPart, sessionId, openFile, fileMentio
   const texts = groupPart === 'reasoning' ? [] : data.blocks.filter(block => block.kind === 'text' && block.text.trim() !== '').map(block => block.text)
   const running = data.status === 'running'
   const members = steps.length ? steps : [data]
-  const reasoning = groupPart === 'response' ? '' : turnReasoning(steps, data)
+  const shown = thinkingShown(roster.prefs)
+  const reasoning = groupPart === 'response' || !shown ? '' : turnReasoning(steps, data)
   // A live step of the same Turn keeps the row ticking even when it sits on an
   // earlier step's cell.
-  const thinking = groupPart === 'response' ? undefined : thinkingStep(members)
+  const thinking = groupPart === 'response' || !shown ? undefined : thinkingStep(members)
   const ms = useThinkingMs({ sessionId, turn: data.turn, settledSteps: members.filter(step => step.status !== 'running').length, skip: hidden || reasoning === '' })
-  // A streaming reply — or a live reasoning row — stands in for the activity row.
+  // A streaming reply stands in for the activity row.
   useLiveNote(actions, sessionId, `text:${node.key ?? data.seq}`, !hidden && running && texts.length > 0 ? { text: true } : null)
-  useLiveNote(actions, sessionId, `think:${node.key ?? data.seq}`, !hidden && thinking !== undefined && reasoning !== '' ? { text: true } : null)
   if (hidden) return null
   // A relay spliced mid-turn is a 'context' node, hidden from the chat flow on
   // DSH 0.2; the step that answers it shows the event line where it was read,
@@ -238,6 +241,11 @@ export function AssistantCell({ node, groupPart, sessionId, openFile, fileMentio
   const relays = relayPart(data, groupPart) ? relaysBefore(contexts, steps, data) : []
   if (texts.length === 0 && !reasoning && relays.length === 0) return null
   const selfId = roster.byId[sessionId]?.id ?? sessionId
+  // The flat layout heads a reply with who speaks, once per Turn: in the step that opens
+  // it, in that step's reasoning part when the reasoning shows there.
+  const speaker = layoutOf(roster.prefs) === 'flat' ? roster.byId[sessionId] : undefined
+  const head = speaker !== undefined && opensReply(steps, data, shown)
+    && (reasoning !== '' || (texts.length > 0 && !(groupPart === 'response' && shown && turnReasoning(steps, data) !== '')))
   return h(Fragment, null,
     relays.map(relay => {
       const source = relay.source
@@ -250,6 +258,7 @@ export function AssistantCell({ node, groupPart, sessionId, openFile, fileMentio
         whole: true,
       })
     }),
+    head ? h(SpeakerHead, { bot: speaker, time: data.time }) : null,
     reasoning ? h(ThinkingRow, {
       text: reasoning, live: thinking !== undefined, viewKey: `${sessionId}:${data.turn}`,
       // The live clock counts the settled steps too: backing `at` by the settled
@@ -275,18 +284,27 @@ function EventLine({ prefix, bots, joiner = t('and'), onOpen, whole = false }) {
   return h('div', { className: 'bt-event' }, parts)
 }
 
+// The flat layout's head over a Bot's reply in its own chat: avatar, name, time.
+function SpeakerHead({ bot, time }) {
+  return h('div', { className: 'bt-group-name' },
+    h('span', { className: 'bt-lead' }, h(BotMark, { bot, size: 22 })), bot.name,
+    Number.isFinite(time) ? h('span', { className: 'bt-group-time', title: clockLabel(time) }, messageClock(time)) : null)
+}
+
 // One Bot message inside a group chat: avatar, name (with its group role), when it ran
-// and how long it took, bubble.
+// and how long it took, bubble. The flat layout moves the avatar from beside the last
+// bubble to the head of the name row, so the text below runs the whole width.
 function GroupMessage({ bot, text, texts = [text], room, roster, actions, msgKey, useUi, whole, time, duration }) {
   const lead = h('button', { type: 'button', className: 'bt-lead', 'aria-label': t("Open {name}'s chat", { name: bot.name }), onClick: () => actions.openSession(bot.id) },
     h(BotMark, { bot, size: 22 }))
+  const flat = layoutOf(roster.prefs) === 'flat'
   const took = Number.isFinite(duration) ? elapsedLabel(duration) : undefined
   return h('div', { className: 'bt-group-msg' },
-    h('span', { className: 'bt-group-name', style: { color: inkText(colorOf(bot)) } }, bot.name,
+    h('span', { className: 'bt-group-name', style: flat ? undefined : { color: inkText(colorOf(bot)) } }, flat ? lead : null, bot.name,
       room?.admin === bot.id ? h('span', { className: 'bt-group-role' }, t('Admin')) : null,
       Number.isFinite(time) ? h('span', { className: 'bt-group-time', title: clockLabel(time) }, messageClock(time)) : null,
       took ? h('span', { className: 'bt-group-took', title: t('Ran for {duration}', { duration: took }) }, took) : null),
-    h(Bubbles, { texts, roster, selfId: bot.id, actions, sessionId: room?.id, msgKey, useUi, lead, whole }))
+    h(Bubbles, { texts, roster, selfId: bot.id, actions, sessionId: room?.id, msgKey, useUi, lead: flat ? null : lead, whole }))
 }
 
 // A member's messages in a row, as one block under its name: what it says while it
@@ -312,18 +330,69 @@ function GroupEvent({ prefix, room, name, roster, actions }) {
       : name ? h('span', null, name) : null)
 }
 
-// A change remember or forget made, which opens the memory it changed. Refusals and
-// entries already saved changed nothing and show no line.
-function MemoryEvent({ sessionId, scope, result, roster, actions, findBot }) {
-  if (!/^(Saved to|Updated in|Removed from) /.test(result)) return null
+// The results a memory write answers with when it changed the memory, and the
+// one that says the entry was there already.
+const MEMORY_SAVED = /^(Saved to|Updated in|Removed from) /
+const MEMORY_ALREADY = /^Already in /
+
+// The words the memory tools take for a scope.
+const MEMORY_TEAM = /^(team|团队|共享)$/i
+const MEMORY_OWN = /^(own|me|mine|self|yours?|自己|我)$/i
+const MEMORY_GROUP = /^(group|this group|群|本群|群聊)$/i
+
+// Why a memory write changed nothing, in the interface language. The host's own
+// words stay in the tool record: they can name the entries that were asked
+// about, and the notice does not repeat them.
+function memoryFailure(code) {
+  if (!code) return undefined
+  switch (code) {
+    case 'memory/empty': return t('Write something to save')
+    case 'memory/no-match': return t('No saved entry matched')
+    case 'memory/refused':
+    case 'memory/denied': return t('The memory refused this change')
+    // A write that broke, and any failure this interface does not know.
+    default: return t('The memory could not be changed')
+  }
+}
+
+// A change remember or forget made, which opens the memory it changed. A
+// refusal and a write that failed changed nothing, and say so, with the way
+// into the memory panel.
+function MemoryEvent({ sessionId, scope, tool, result, failed, code, roster, actions, findBot }) {
   const self = roster.byId[sessionId]
-  const team = /^(team|团队|共享)$/i.test(String(scope ?? '').trim())
-  const other = team || !scope ? undefined : findBot(scope)
+  const room = roster.roomsById[sessionId]
+  const named = String(scope ?? '').trim()
+  const team = MEMORY_TEAM.test(named)
+  const other = team || named === '' ? undefined : findBot(named)
   const target = other && other.id !== self?.id ? other : self
-  if (!target) return null
-  const label = team ? t('Team memory updated') : target === self ? t('Memory updated') : t("Updated {name}'s memory", { name: target.name })
-  return h('div', { className: 'bt-event' },
-    h('button', { type: 'button', title: result, onClick: () => actions.openMemory(target.id) }, h(MemoryIcon), label))
+  // The panel that shows the memory: the Bot's own, the group's in a group chat,
+  // or none when the scope names a Bot that is not there.
+  const panel = team ? self?.id
+    : MEMORY_OWN.test(named) ? self?.id
+      : MEMORY_GROUP.test(named) ? room?.id
+        : named === '' ? (room?.id ?? self?.id)
+          : other?.id
+  if (!failed && MEMORY_ALREADY.test(result)) {
+    // The entry was there already: a quiet line, and the panel shows it.
+    return h('div', { className: 'bt-event' },
+      panel === undefined ? h('span', null, h(MemoryIcon), t('Already saved')) : h('button', { type: 'button', onClick: () => actions.openMemory(panel) }, h(MemoryIcon), t('Already saved')))
+  }
+  if (!failed && MEMORY_SAVED.test(result)) {
+    if (!target) return null
+    const label = team ? t('Team memory updated') : target === self ? t('Memory updated') : t("Updated {name}'s memory", { name: target.name })
+    return h('div', { className: 'bt-event' },
+      h('button', { type: 'button', title: result, onClick: () => actions.openMemory(target.id) }, h(MemoryIcon), label))
+  }
+  // Nothing was saved. The reason is a short line of our own; what the host
+  // said stays in the tool record.
+  const reason = memoryFailure(code)
+  const label = failed
+    ? (tool === 'forget' ? t("Couldn't remove from memory") : t("Couldn't save to memory"))
+    : t('Memory not changed')
+  return h('div', { className: 'bt-event bt-event-error', role: 'status', title: code },
+    h('span', null, h(MemoryIcon), label),
+    reason ? h('span', null, ` · ${reason}`) : null,
+    panel === undefined ? null : h('button', { type: 'button', className: 'bt-soft bt-soft-sm', onClick: () => actions.openMemory(panel) }, t('Manage')))
 }
 
 function PartLine({ time }) {
@@ -350,38 +419,54 @@ function EarlierUser({ row }) {
 // Pages load from the host as the user scrolls up; a thin line marks where each
 // part begins, the last one where the current part begins.
 function EarlierParts({ sessionId, roster, actions }) {
-  const [view, setView] = useState({ items: [], cursor: undefined, loading: true, failed: false, startedAt: null })
+  const [view, setView] = useState({ pages: [], cursor: undefined, loading: true, failed: false, startedAt: null })
   const top = useRef(null)
   const busy = useRef(false)
-  const alive = useRef(true)
+  const generation = useRef(0)
   const restore = useRef(null)
   const load = (cursor) => {
     if (busy.current) return
+    const mine = generation.current
+    // The host numbers a page by the same part index: cursor.part, or the part before this one.
+    const partIndex = partIndexOf(roster.byId[sessionId], sessionId, cursor)
     busy.current = true
     setView(current => ({ ...current, loading: true, failed: false }))
     actions.earlier(sessionId, cursor).then((page) => {
+      if (mine !== generation.current) return
       busy.current = false
-      if (!alive.current) return
       // The chat's scroller does not anchor content prepended above the viewport,
       // so the page keeps its distance from the end by hand.
       const scroller = top.current && scrollParent(top.current)
       if (scroller) restore.current = { scroller, fromEnd: scroller.scrollHeight - scroller.scrollTop }
-      setView(current => ({ items: [...page.items, ...current.items], cursor: page.cursor, loading: false, failed: false, startedAt: page.startedAt ?? current.startedAt }))
+      const incoming = Array.isArray(page.items) ? page.items : []
+      setView(current => {
+        const pages = current.pages.slice()
+        const at = pages.findIndex(entry => entry.partIndex === partIndex)
+        // The host sends a part's aside cards on every page of that part.
+        const btw = Array.isArray(page.btw) ? page.btw : (at >= 0 ? pages[at].btw : [])
+        if (at >= 0) pages[at] = { partIndex, items: [...incoming, ...pages[at].items], btw }
+        else pages.push({ partIndex, items: incoming, btw })
+        pages.sort((a, b) => a.partIndex - b.partIndex)
+        return { pages, cursor: page.cursor, loading: false, failed: false, startedAt: page.startedAt ?? current.startedAt }
+      })
     }, () => {
+      if (mine !== generation.current) return
       busy.current = false
-      if (alive.current) setView(current => ({ ...current, loading: false, failed: true }))
+      setView(current => ({ ...current, loading: false, failed: true }))
     })
   }
   useEffect(() => {
-    alive.current = true
+    generation.current += 1
+    busy.current = false
+    setView({ pages: [], cursor: undefined, loading: true, failed: false, startedAt: null })
     load(undefined)
-    return () => { alive.current = false }
+    return () => { generation.current += 1 }
   }, [sessionId])
   useLayoutEffect(() => {
     const pending = restore.current
     restore.current = null
     if (pending) pending.scroller.scrollTop = pending.scroller.scrollHeight - pending.fromEnd
-  }, [view.items])
+  }, [view.pages])
   useEffect(() => {
     const node = top.current
     if (!node || view.loading || view.failed || !view.cursor || typeof IntersectionObserver !== 'function') return undefined
@@ -391,12 +476,14 @@ function EarlierParts({ sessionId, roster, actions }) {
     observer.observe(node)
     return () => observer.disconnect()
   }, [view.cursor, view.loading, view.failed])
+  const items = []
+  for (const page of view.pages) items.push(...withBtwRows(page.items, page.btw))
   return h('div', { className: 'bt-earlier', role: 'feed', 'aria-label': t('Earlier messages'), 'aria-busy': view.loading },
     h('div', { ref: top, className: 'bt-earlier-top' },
       view.loading ? h(Shimmer, null, t('Loading earlier messages…'))
         : view.failed ? h('button', { type: 'button', className: 'bt-soft', onClick: () => load(view.cursor) }, t('Couldn’t load earlier messages · Retry'))
           : view.cursor ? h('button', { type: 'button', className: 'bt-soft', onClick: () => load(view.cursor) }, t('Load earlier')) : null),
-    h(ChatRows, { items: view.items, sessionId, roster, actions }),
+    h(ChatRows, { items, sessionId, roster, actions }),
     h(PartLine, { time: view.startedAt }))
 }
 
@@ -435,10 +522,14 @@ function chatRow(row, key, { sessionId, selfId, roster, actions, useUi }) {
     case 'divider': return h(PartLine, { key, time: row.time })
     case 'user': return h(EarlierUser, { key, row })
     case 'answer': return h(AnsweredReply, { key, node: { data: row } })
-    // A display-only card an earlier page lists: the same chrome the live part
-    // draws, read-only by nature — it has nothing to submit.
-    case 'view': return h('div', { key, className: 'bt-q-inline' }, h(WidgetCard, { title: row.title, view: row.view }))
-    case 'bot': return h(Bubbles, { key, texts: row.texts, roster, selfId, actions, sessionId: useUi ? sessionId : undefined, msgKey: useUi ? `${sessionId}:${row.time}` : undefined, useUi, fold: FOLD_HUGE })
+    // A display-only view replays from the blueprint the host kept on the call.
+    case 'view': return h(WidgetCell, { key, sessionId, callId: row.callId, args: { text: name => name === 'title' ? row.title : undefined, value: name => name === 'view' ? row.view : undefined }, done: true, isError: false, roster, actions })
+    case 'bot': {
+      const bubbles = h(Bubbles, { key, texts: row.texts, roster, selfId, actions, sessionId: useUi ? sessionId : undefined, msgKey: useUi ? `${sessionId}:${row.time}` : undefined, useUi, fold: FOLD_HUGE })
+      const speaker = layoutOf(roster.prefs) === 'flat' ? roster.byId[selfId] : undefined
+      return speaker ? h(Fragment, { key }, h(SpeakerHead, { bot: speaker, time: row.time }), bubbles) : bubbles
+    }
+    case 'btw': return h(BtwCardView, { key, card: row.card, actions })
     case 'event': {
       if (row.role === 'report') return h(GroupEvent, { key, prefix: t('Replies from'), room: roster.roomsById[row.roomId], name: t('a group chat'), roster, actions })
       const other = roster.byId[row.botId] ?? { id: row.botId, name: row.name ?? t('a Bot'), color: 'gray' }
@@ -701,8 +792,8 @@ function toolActivity(name, arg, findBot, self) {
 // call's own description, else the kind of tool and what it works on. `doing` is a work
 // entry, or just a tool name.
 export function workPhrase(doing) {
-  const { tool, said, note, target, switching } = typeof doing === 'string' ? { tool: doing } : doing ?? {}
-  if (switching) return t('Moving to a fresh conversation')
+  const { tool, said, note, target, switching, folder } = typeof doing === 'string' ? { tool: doing } : doing ?? {}
+  if (switching) return folder === true ? t('Switching working folder') : t('Moving to a fresh conversation')
   const own = (said || note)?.replace(/[\s.。…]+$/u, '')
   if (own) return own
   if (!tool) return t('Thinking about it')
@@ -906,7 +997,7 @@ function renderCall(call, { sessionId, roster, actions, useUi, useWork, findBot,
     }
     case 'remember':
     case 'forget':
-      return done && !call.isError ? h(MemoryEvent, { sessionId, scope: arg('scope'), result: contentText(call.content), roster, actions, findBot }) : null
+      return done ? h(MemoryEvent, { sessionId, scope: arg('scope'), tool, result: contentText(call.content), failed: call.isError === true, code: call.error?.code, roster, actions, findBot }) : null
     default:
       return null
   }

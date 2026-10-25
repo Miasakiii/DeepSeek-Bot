@@ -150,55 +150,87 @@ test('the chat endpoint pages a Bot\'s own chat from the newest part back', asyn
   const first = (await call('chat', { botId: 'm1' })).value
   assert.deepEqual(first, {
     sessionId: 'm1c',
-    items: [{ kind: 'user', text: 'second', time: 70 }, { kind: 'bot', text: 'reply', time: 71 }],
+    items: [{ kind: 'user', text: 'second', time: 70, seq: 41 }, { kind: 'bot', text: 'reply', time: 71, seq: 42 }],
     cursor: { part: 1, beforeSeq: 41 },
   })
   // The current part's first message has the line that marks where the part began.
   const second = (await call('chat', { botId: 'm1', cursor: first.cursor })).value
-  assert.deepEqual(second.items, [{ kind: 'divider', time: 50 }, { kind: 'user', text: 'first', time: 60 }])
+  assert.deepEqual(second.items, [{ kind: 'divider', time: 50 }, { kind: 'user', text: 'first', time: 60, seq: 40 }])
   assert.deepEqual(second.cursor, { part: 0 })
   const third = (await call('chat', { botId: 'm1', cursor: second.cursor })).value
-  assert.deepEqual([third.items, third.cursor], [[{ kind: 'user', text: 'long ago', time: 5 }], null])
+  assert.deepEqual([third.items, third.cursor], [[{ kind: 'user', text: 'long ago', time: 5, seq: 3 }], null])
   assert.equal((await call('chat', { botId: 'nobody' })).error.code, 'bot/not-found')
 })
 
-test('earlier items list a display-only view card at its call, and only that one', async (t) => {
-  // The call block in an assistant message, as dsh-llm's BlockAssembler writes it.
-  const viewCall = (id, args, turn = 8) => ({ type: 'assistant/message', time: 70, data: { turn, message: { content: [{ type: 'tool-call', id, name: 'show_view', arguments: JSON.stringify(args) }] } } })
-  const metric = { type: 'stack', children: [{ type: 'metric', label: 'Steps', value: 3 }] }
+test('a show_view call in a part reads back as a view row with its blueprint', async (t) => {
   const record = (event, seq) => ({ event: { ...event, seq } })
+  const showView = (time, args) => ({ type: 'tool/call', time, data: { callId: 'c1', name: 'show_view', arguments: typeof args === 'string' ? args : JSON.stringify(args) } })
   const { call, stop } = start({
     pages: {
       'm1c:end': {
         records: [
-          // A hidden exchange turn shows none of its calls, its view cards too.
-          record(viewCall('v4', { title: 'Hidden', view: metric }, 7), 40),
-          record({ type: 'assistant/message', time: 70, data: { turn: 8, message: { content: [{ type: 'text', text: 'here you go' }, { type: 'tool-call', id: 'v1', name: 'show_view', arguments: JSON.stringify({ title: '  Status  ', view: metric }) }] } } }, 41),
-          // An interactive card waits for its answer, which lists as its own entry.
-          record(viewCall('v2', { title: 'Pick', view: { type: 'options', id: 'o', options: [{ label: 'A' }] } }, 9), 42),
-          // A display-only card cannot wait for a reply; the host refuses the call.
-          record(viewCall('v5', { title: 'Status', view: metric, await_reply: true }, 10), 43),
+          record(userMessage('look', 70), 41),
+          record(showView(71, { title: 'A long note', view: { type: 'stack', children: [0, 1, 2, 3].map(() => ({ type: 'text', text: 'x'.repeat(1900) })) } }), 42),
+          // A view needs no title; a call the tool refused leaves no row. Other tools stay out too.
+          record(showView(72, { view: { type: 'text', text: 'y' } }), 43),
+          record(showView(72, { title: 'Refused', view: { type: 'nope' } }), 45),
+          record({ type: 'tool/call', time: 73, data: { callId: 'c3', name: 'list_bots', arguments: '{}' } }, 44),
         ],
-        hasMore: false,
-      },
-      'm1:end': {
-        // A blueprint the host refused drew no card, so it gives no entry.
-        records: [record(viewCall('v3', { title: 'Broken', view: { type: 'nope' } }, 3), 3)],
         hasMore: false,
       },
     },
   })
   t.after(stop)
   await call('state')
-  const first = (await call('chat', { botId: 'm1' })).value
-  assert.deepEqual(first.items, [
-    // The current part has no earlier page of its own, so it opens with its line.
-    { kind: 'divider', time: 50 },
-    { kind: 'bot', text: 'here you go', time: 70 },
-    { kind: 'view', title: 'Status', view: metric, time: 70 },
-  ])
-  const second = (await call('chat', { botId: 'm1', cursor: first.cursor })).value
-  assert.deepEqual(second.items, [])
+  const page = (await call('chat', { botId: 'm1' })).value
+  const row = page.items.find(item => item.kind === 'view')
+  assert.equal(row.title, 'A long note')
+  assert.equal(row.callId, 'c1')
+  assert.equal(row.view.children.length, 4)
+  assert.equal(JSON.stringify(row.view).length > 7500, true)
+  assert.deepEqual(page.items.map(item => item.kind), ['divider', 'user', 'view', 'view'])
+  assert.equal(page.items.at(-1).title, '')
+})
+
+test('view replay omits hidden, refused and interactive calls in pages and the live feed', async (t) => {
+  const view = { type: 'text', text: 'Visible' }
+  const cases = [
+    { turn: 7, arguments: { title: 'Hidden', view } },
+    { arguments: { title: 'Refused wait', view, await_reply: true } },
+    { arguments: { title: 'Too long', view: { type: 'text', text: 'x'.repeat(7800) } } },
+    { arguments: { title: 'Interactive', view: { type: 'confirm', id: 'ok' } } },
+    { arguments: '{invalid' },
+    { arguments: { title: '  Accepted  ', view: { type: 'progress', percent: '40' } } },
+  ]
+  const events = cases.map((data, index) => ({
+    type: 'tool/call', time: 70 + index, seq: 41 + index,
+    data: { turn: 8, callId: `v${index}`, name: 'show_view', ...data },
+  }))
+  const { ctx, call, stop, routes } = start({ pages: { 'm1c:end': { records: events.map(event => ({ event })), hasMore: false } } })
+  t.after(stop)
+  await call('state')
+  const expected = { kind: 'view', title: 'Accepted', view: { type: 'progress', percent: 40 }, callId: 'v5', time: 75 }
+  const page = (await call('chat', { botId: 'm1' })).value
+  assert.deepEqual(page.items.filter(item => item.kind === 'view'), [expected])
+
+  const abort = new AbortController()
+  t.after(() => abort.abort())
+  const response = await routes['/api/bot/feed'].fetch(new Request('http://localhost/api/bot/feed', { signal: abort.signal }))
+  const next = reader(response)
+  assert.equal((await next()).event, 'hello')
+  const onEvent = ctx.listeners.get('session/event').at(-1)
+  for (const event of events) onEvent({ id: 'm1c' }, event)
+  assert.deepEqual(await next(), { event: 'message', data: { botId: 'm1', sessionId: 'm1c', item: expected } })
+})
+
+test('a display view is retained when its part becomes earlier history', async (t) => {
+  const view = { type: 'text', text: 'From the first part' }
+  const event = { type: 'tool/call', time: 20, seq: 3, data: { turn: 1, callId: 'old-view', name: 'show_view', arguments: JSON.stringify({ title: 'Earlier card', view }) } }
+  const { call, stop } = start({ pages: { 'm1:end': { records: [{ event }], hasMore: false } } })
+  t.after(stop)
+  await call('state')
+  const page = (await call('earlier', { sessionId: 'm1c' })).value
+  assert.deepEqual(page.items, [{ kind: 'view', title: 'Earlier card', view, callId: 'old-view', time: 20 }])
 })
 
 test('the run-stats endpoint reads DSH\'s figures for the current part of a Bot\'s chat', async (t) => {

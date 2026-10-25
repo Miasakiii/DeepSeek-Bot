@@ -12,10 +12,14 @@ if (host !== undefined && location.origin === host) {
     dataLocation: () => ipcRenderer.invoke('ds-bot:data-location'),
     moveData: (workspace) => ipcRenderer.invoke('ds-bot:move-data', typeof workspace === 'string' ? workspace : undefined),
     teamWorkspaceChanged: (path) => { ipcRenderer.send('ds-bot:team-workspace', String(path)) },
-    // The app's own update state, as the update card's `dshDesktop.updates` reads it: the
-    // page pulls the snapshot and hears every change of it through these.
+    // The app's own update state, as the update card's `dsBotApp.updates` reads it (the
+    // same shape upstream's app gives): `state` answers the snapshot, `subscribe` hears
+    // every change, and the About row's buttons act through check/install/open.
     updates: {
-      status: () => ipcRenderer.invoke('ds-bot:updates-status'),
+      state: () => ipcRenderer.invoke('ds-bot:updates-status'),
+      check: () => ipcRenderer.invoke('ds-bot:updates-check'),
+      install: () => ipcRenderer.invoke('ds-bot:updates-install'),
+      open: () => ipcRenderer.invoke('ds-bot:updates-open'),
       subscribe: (listener) => {
         const note = (_event, status) => { listener(status) }
         ipcRenderer.on('ds-bot:updates-changed', note)
