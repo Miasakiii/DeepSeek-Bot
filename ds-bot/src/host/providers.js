@@ -109,6 +109,18 @@ export function install(rt) {
     return missing
   }
 
+  // The DeepSeek account beside the routes, for a window whose Models page offers its
+  // sign-in: whether the account service is there, and whether a login is stored. A
+  // broken service never takes the routes down with it.
+  async function accountRow() {
+    try {
+      const view = await rt.accountView()
+      return { available: view.available, status: view.state?.status ?? 'signed-out' }
+    } catch {
+      return undefined
+    }
+  }
+
   // The own directory's routes, then the ones DSH serves, with their models and key
   // state. A provider with no key and no models (DeepSeek's account route before a
   // sign-in) is left out.
@@ -153,7 +165,7 @@ export function install(rt) {
     }
     // The ones that come with the setup first, then the added ones as DSH lists them.
     providers.sort((a, b) => Number(a.removable) - Number(b.removable))
-    return { available: providers.length > 0 || addable.length > 0 || found !== undefined, providers, addable, protocols: PROTOCOLS }
+    return { available: providers.length > 0 || addable.length > 0 || found !== undefined, providers, addable, protocols: PROTOCOLS, account: await accountRow() }
   }
 
   // A key is only ever written; nothing here reads one back. An own route's key goes to

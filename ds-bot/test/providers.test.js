@@ -15,7 +15,7 @@ after(() => { for (const home of homes.splice(0)) rmSync(home, { recursive: true
 // directory offers catalog providers, and its settings take path writes the way DSH's
 // do, under a revision. Routes come and go with the pi-ai section. The plugin's own
 // modules install beside them, so the own directory and its vault are live too.
-function dsh({ keys = {}, readOnly = [], user = {}, base = {}, catalog = { anthropic: ['claude-a', 'claude-b'], moonshotai: ['kimi-k3'] }, resolve = undefined } = {}) {
+function dsh({ keys = {}, readOnly = [], user = {}, base = {}, catalog = { anthropic: ['claude-a', 'claude-b'], moonshotai: ['kimi-k3'] }, account = [], resolve = undefined } = {}) {
   const store = { ...keys }
   const writes = []
   let revision = 0
@@ -72,7 +72,7 @@ function dsh({ keys = {}, readOnly = [], user = {}, base = {}, catalog = { anthr
       listProviders: () => [...dshRoutes(), ...ownRoutes().map(id => ({ id, name: rt.state.providers[id]?.name ?? id }))],
       listModels: async (id) => {
         if (id === 'deepseek-official') return [{ id: 'deepseek-flash', name: 'DeepSeek Flash' }]
-        if (id === 'deepseek-account') return []
+        if (id === 'deepseek-account') return account.map(model => ({ id: model }))
         const profile = piValue().providers[id]
         if (profile !== undefined) return profile.models ?? (catalog[id] ?? []).map(model => ({ id: model }))
         const own = registrations.find(entry => entry.providers.includes(id))
@@ -306,6 +306,14 @@ test('a route DSH cannot read a key back for stays where its key works', async (
   assert.deepEqual(rt.state.providers, {})
   assert.deepEqual(writes, [])
   assert.deepEqual(rt.state.providersMoved, true)
+})
+
+test('a signed-in account route serves its models without a key', async () => {
+  const { rt } = dsh({ account: ['deepseek-chat'] })
+  // The account route authenticates by the login, not an API key reference, so its
+  // models never carry needsKey, and the Models page lists them.
+  assert.deepEqual((await rt.catalog()).filter(entry => entry.provider === 'deepseek-account').map(entry => [entry.ref, entry.needsKey ?? false]), [['deepseek-account/deepseek-chat', false]])
+  assert.deepEqual(row(await rt.providersView(), 'deepseek-account').models.map(model => model.ref), ['deepseek-account/deepseek-chat'])
 })
 
 test('an API key is what an HTTP header carries, without a NAME= or quotes', () => {

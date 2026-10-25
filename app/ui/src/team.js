@@ -17,7 +17,9 @@ import { openFeed } from './api.js'
 
 // Memory news and connector states change without a notice on the feed.
 const CATCH_UP_MS = 15_000
-const READ_AGAIN = new Set(['hello', 'revision', 'live'])
+// `account` news changes the served models with it (a finished DeepSeek login adds the
+// account route's models), so it reads the roster again too.
+const READ_AGAIN = new Set(['hello', 'revision', 'live', 'account'])
 const NO_WORK = { bots: {}, approvals: [] }
 
 // A selection from a source. The value is kept per snapshot and selector, so React reads
@@ -183,6 +185,17 @@ export function createTeam() {
     addProvider: body => after(call('provider-add', body)),
     providerModels: body => call('provider-models', body),
     removeProvider: provider => after(call('provider-remove', { provider })),
+    // The window has no shell to carry DSH's account plugin: its DeepSeek sign-in and
+    // sign-out run on the host's account endpoints. `canSignIn` stays false, so a view
+    // that would borrow the shell's entry (the model menu, the Models page) shows this
+    // window's own.
+    canSignIn: () => false,
+    ownSignIn: () => ui.set(state => ({ ...state, signIn: (state.signIn ?? 0) + 1 })),
+    closeSignIn: () => ui.set(state => ({ ...state, signIn: null })),
+    accountState: () => call('account-state'),
+    accountStart: body => call('account-sign-in', body),
+    accountCancel: id => call('account-cancel', { id }),
+    accountSignOut: () => after(call('account-sign-out', { locale: language(), timezoneOffsetSeconds: -new Date().getTimezoneOffset() * 60 })),
     openModels: () => actions.openSettings('models'),
     // Nothing else draws in the window: no shell panels, right sidebar, "@" menu or voice plugin.
     hasRightSidebar: () => false,

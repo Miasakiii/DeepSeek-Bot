@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { adoptToken } from './api.js'
 import { installOwnBrowserBridge } from '../../../ds-bot/src/client/browser-bridge.js'
 import { ABOUT_CSS } from '../../../ds-bot/src/client/about.js'
+import { ACCOUNT_CSS } from '../../../ds-bot/src/client/account-dialog.js'
 import { BOT_SETTINGS_CSS } from '../../../ds-bot/src/client/bot-settings.js'
 import { FEEDBACK_CSS } from '../../../ds-bot/src/client/feedback.js'
 import { FOLDER_CSS } from '../../../ds-bot/src/client/folder-menu.js'
@@ -32,7 +33,7 @@ if (/mac/iu.test(navigator.userAgentData?.platform ?? navigator.platform)) docum
 
 // The Bot views' own stylesheets, the same ones the plugin puts in DSH.
 for (const [tag, text] of [
-  ['shell', SHELL_CSS], ['sidebar', SIDEBAR_CSS], ['conversation', CONVERSATION_CSS], ['secrets', SECRET_CSS], ['providers', PROVIDERS_CSS],
+  ['shell', SHELL_CSS], ['sidebar', SIDEBAR_CSS], ['conversation', CONVERSATION_CSS], ['secrets', SECRET_CSS], ['providers', PROVIDERS_CSS + ACCOUNT_CSS],
   ['models', MODEL_CSS + FOLDER_CSS + BOT_SETTINGS_CSS + GROUP_SETTINGS_CSS], ['usage', USAGE_CSS], ['schedules', SCHEDULE_CSS],
   ['feedback', FEEDBACK_CSS], ['about', ABOUT_CSS], ['members', MEMBER_CSS], ['widgets', WIDGET_CSS],
 ]) installStyles(text, tag)

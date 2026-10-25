@@ -277,7 +277,7 @@ export function SettingsDialog({ page, id, roster, actions, useUpdate, leaving =
         shown === 'usage' ? null : h('div', { key: pageKey, className: 'bt-settings-scroll bt-settings-page', 'data-move': last.current.move },
           errorLine,
           shown === 'general' ? h(GeneralPage, { roster, actions, run }) : null,
-          shown === 'models' ? h(ProvidersPage, { actions, run, Section: SetSection }) : null,
+          shown === 'models' ? h(ProvidersPage, { actions, run, Section: SetSection, roster }) : null,
           bot ? h('div', { className: 'bt-settings-form' }, h(BotSettingsForm, { key: bot.id, bot, roster, actions, run })) : null,
           shown === 'bots' && !bot ? h(BotsPage, { roster, actions, run }) : null,
           room ? h('div', { className: 'bt-settings-form' }, h(GroupSettingsForm, { key: room.id, room, roster, actions, run })) : null,

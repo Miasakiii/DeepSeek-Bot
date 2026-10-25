@@ -25,6 +25,10 @@ const RETIRED_BUNDLES = ['deepseek-bot-engine', '@deepseek-ai/dsh-web-app']
 // needs `connection`). The own window's profile, which mounts no web-app bundle, supplies the
 // rows through this overlay instead. `connection` keeps its schema defaults: nothing serves
 // its routes in this mode — the outlet is the window's only way in.
+// The `webserver` row carries one route only: DSH's account provider registers its OAuth
+// loopback callback `/oauth/callback` on the engine's own web server, so the window's
+// DeepSeek sign-in needs that server listening — on a loopback port the system picks. It
+// serves no window content, and phase C's own OAuth takes the row back out.
 export const OWN_SERVICES_PATCH_NAME = 'own-services.patch.yml'
 
 /** The overlay rows that carry the front end's services into the own window's profile. */
@@ -34,6 +38,7 @@ export function ownServicesPatchRows() {
     { id: 'session-controller', name: '@deepseek-ai/dsh-api-session-controller' },
     { id: 'connection', name: '@deepseek-ai/dsh-client-connection' },
     { id: 'file-upload', name: '@deepseek-ai/dsh-client-file-upload' },
+    { id: 'webserver', name: '@deepseek-ai/dsh-host-webserver', config: { host: '127.0.0.1', port: 0 } },
   ] }]
 }
 // The app's own manifest is the installation: DSH imports plugins only from the installation's dependency

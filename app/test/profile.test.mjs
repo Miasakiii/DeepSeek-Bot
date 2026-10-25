@@ -33,7 +33,7 @@ describe('the app profile with the own window', () => {
   })
   after(() => { rmSync(home, { recursive: true, force: true }) })
 
-  test('mounts no DSH Web: no web server, no connection and no front end', () => {
+  test('mounts no DSH Web of its own: no front end, and its services only through the overlay', () => {
     const entries = compose(profile)
     const on = enabled(entries)
     for (const id of ['webserver', 'web-runtime', 'connection', 'modules']) assert.ok(!on.has(id), `${id} is not mounted`)
@@ -45,10 +45,16 @@ describe('the app profile with the own window', () => {
     for (const id of ['miasaki-bot', 'miasaki-web-search']) assert.ok(on.has(id), `${id} is mounted`)
   })
 
-  test("carries the front end's services through the own overlay", () => {
-    const on = enabled(compose(profile, ownServicesPatchRows()))
-    for (const id of ['workspace', 'session-controller', 'connection', 'file-upload']) assert.ok(on.has(id), `${id} is mounted`)
-    assert.ok(!on.has('webserver'), 'the web server stays out')
+  test("carries the front end's services through the own overlay, and the OAuth callback's web server", () => {
+    const entries = compose(profile, ownServicesPatchRows())
+    const on = enabled(entries)
+    for (const id of ['workspace', 'session-controller', 'connection', 'file-upload', 'webserver']) assert.ok(on.has(id), `${id} is mounted`)
+    for (const id of ['web-runtime', 'modules']) assert.ok(!on.has(id), `${id} stays out`)
+    assert.ok(!rows(entries).some((entry) => DSH_WEB_FRONT_END.test(entry.name ?? '')), 'the DSH Web front end is not mounted')
+    // The web server only takes the account sign-in's loopback callback: a loopback
+    // address, a port the system picks, and no front end riding on it.
+    const server = rows(entries).find((entry) => entry.id === 'webserver')
+    assert.deepEqual(server.config, { host: '127.0.0.1', port: 0 })
   })
 })
 
@@ -78,6 +84,9 @@ describe('the app profile with the rollback window (DS_BOT_OWN_UI=0)', () => {
       { id: 'session-controller', name: stock.get('session-controller') },
       { id: 'connection', name: stock.get('connection') },
       { id: 'file-upload', name: stock.get('file-upload') },
+      // The web server the rollback mode mounts through the front end; here it only
+      // listens for the account sign-in's loopback callback.
+      { id: 'webserver', name: entries.find((entry) => entry.id === 'webserver').name, config: { host: '127.0.0.1', port: 0 } },
     ] }])
   })
 })

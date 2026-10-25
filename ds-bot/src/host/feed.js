@@ -56,6 +56,11 @@ export function install(rt) {
     if (clients.size > 0) publish('revision', { revision: state.revision })
   }
 
+  // The account module's states: each change reaches every window as `account` news.
+  rt.accountNews = (state) => {
+    if (clients.size > 0) publish('account', state)
+  }
+
   let liveTimer
   const live = () => {
     if (clients.size === 0 || liveTimer !== undefined) return

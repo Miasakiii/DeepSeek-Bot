@@ -35,7 +35,7 @@ The Host reads model settings and keys the way DSH does: environment variables s
 
 ## The profile
 
-The Host's profile `miasaki-dsbot` is in `profiles/miasaki-dsbot` in the data location. Which bundles it stacks follows the window. With the own window the outlet is the window's only way in, so the profile goes without `@deepseek-ai/dsh-web-app` — no DSH Web front end, no web server — and the host services that the Bot team runs on (the Session turn controller, the workspace, file upload and the connection registry) come through a small overlay the Host writes beside the profiles (`own-services.patch.yml`). With the rollback (`DS_BOT_OWN_UI=0`, or a window build that is missing) the profile stacks the bundles as before, and the window rides DSH's Web front end:
+The Host's profile `miasaki-dsbot` is in `profiles/miasaki-dsbot` in the data location. Which bundles it stacks follows the window. With the own window the outlet is the window's only way in, so the profile goes without `@deepseek-ai/dsh-web-app` — no DSH Web front end — and the host services that the Bot team runs on (the Session turn controller, the workspace, file upload and the connection registry) come through a small overlay the Host writes beside the profiles (`own-services.patch.yml`). The overlay also mounts the engine's own web server, on a loopback port the system picks, for one route: the DeepSeek sign-in's OAuth loopback callback, which DSH's account provider registers there. It serves no window content — the outlet stays the only way in — and phase C's own OAuth takes it back out. With the rollback (`DS_BOT_OWN_UI=0`, or a window build that is missing) the profile stacks the bundles as before, and the window rides DSH's Web front end:
 
 | Bundle | What it adds |
 |---|---|
