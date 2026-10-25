@@ -17,7 +17,7 @@ runInNewContext(bundle.outputFiles[0].text, {
       react: {
         createElement: (type, props, ...children) => ({ type, props: props ?? {}, children: children.flat(Infinity) }),
         useState: initial => [initial, () => {}], useRef: current => ({ current }),
-        useLayoutEffect() {}, useEffect() {}, useMemo: make => make(),
+        useLayoutEffect() {}, useEffect() {}, useMemo: make => make(), useId: () => 'row-id',
       },
       'react-dom': {},
       '@deepseek-ai/dsh-client-ui-primitives': {},
@@ -52,6 +52,31 @@ test('with the clock, a time separator sits above the first entry and after each
     { kind: 'user', text: 'back', time: 75 * MINUTE },
   ]
   assert.deepEqual(shape(ChatRows({ items, sessionId: 'b', roster, actions: {}, clock: true })), ['PartLine', 'clock', 'EarlierUser', 'bot:one+two', 'clock', 'EarlierUser'])
+})
+
+test('a view entry an earlier page lists draws its card, read-only', () => {
+  const items = [
+    { kind: 'user', text: 'status?', time: MINUTE },
+    { kind: 'view', title: 'Status', view: { type: 'metric', label: 'Done', value: 3 }, time: 2 * MINUTE },
+    { kind: 'bot', text: 'all set', time: 2 * MINUTE },
+  ]
+  const rows = ChatRows({ items, sessionId: 'b', roster, actions: {} })
+  // The rows come out of the VM, so the mapped array is rebuilt on this side before deepEqual.
+  const kinds = [...rows].map(row => row.props.className === 'bt-q-inline' ? 'view' : row.type.name === 'Bubbles' ? `bot:${row.props.texts.join('+')}` : row.type.name)
+  assert.deepEqual(kinds, ['EarlierUser', 'view', 'bot:all set'])
+  const card = rows[1].children[0]
+  assert.equal(card.type.name, 'WidgetCard')
+  assert.equal(card.props.title, 'Status')
+  assert.deepEqual(card.props.view, items[1].view)
+  assert.equal(card.props.onSubmit, undefined)
+  // Rendered, the card is the chrome every view wears with its title and nothing to submit.
+  const drawn = card.type(card.props)
+  assert.equal(drawn.props.className, 'bt-q')
+  const [head, body] = drawn.children
+  assert.equal(head.children[0].children[0].children[0], 'Status')
+  assert.equal(head.children[1].children[0], 'View')
+  assert.equal(body.type.name, 'WidgetView')
+  assert.deepEqual(body.props.view, items[1].view)
 })
 
 test('a reasoning row the reader opened stays open when the turn moves it to a later step', () => {

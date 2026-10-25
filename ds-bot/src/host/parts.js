@@ -20,7 +20,7 @@ import { HANDOFF_ACK, HISTORY_TIMEOUT_MS, REPLY_KIND, SOURCE_KIND } from './cons
 import { CHECKPOINT_PROMPT, STEWARD_SYSTEM, checkpointCount, checkpointTail, checkpointTailNote, checkpointText, linesFor, parseDecision, stewardRequest } from './steward.js'
 import { RESUME_DELAY_MS } from './resume.js'
 import { clip, createClock, escapeRegExp, estimateTokens, splitRef, textOf } from './text.js'
-import { validateViewAnswer, viewSummary } from '../shared/views.js'
+import { checkShownView, normalizeView, validateViewAnswer, viewSummary } from '../shared/views.js'
 
 // An ask_user card as the user saw it. The user's reply is often just an option label,
 // which means nothing without the card. Arguments the tool would refuse (no question,
@@ -50,6 +50,22 @@ export function viewCardText(args) {
   if (title === '' || card?.view === null || typeof card?.view !== 'object' || Array.isArray(card?.view)) return ''
   const summary = viewSummary(card.view)
   return summary === '' ? `[View card] ${title}` : `[View card] ${title}\n${summary}`
+}
+
+// A display-only show_view call as a chat entry, drawn by the same rule as the
+// card the client renders from the call: one the tool would refuse
+// (checkShownView's error) drew no card, and an interactive one waits for its
+// answer, which the pages list as an entry of its own. The call block keeps the
+// model's raw JSON string as its arguments.
+function viewCardItem(args) {
+  if (typeof args === 'string') {
+    try { args = JSON.parse(args) } catch { return undefined }
+  }
+  if (args === null || typeof args !== 'object' || Array.isArray(args)) return undefined
+  const view = normalizeView(args.view)
+  const shown = checkShownView(args.title, view)
+  if (shown.error !== undefined || shown.interactive || args.await_reply === true) return undefined
+  return { kind: 'view', title: shown.title, view }
 }
 
 // What one event adds to a Bot's chat history: an answer of the Bot's (its text, or a
@@ -1223,6 +1239,11 @@ export function install(rt) {
         const content = Array.isArray(event.data?.message?.content) ? event.data.message.content : []
         for (const block of content) {
           if (block?.type === 'text' && typeof block.text === 'string' && block.text.trim() !== '') items.push({ kind: 'bot', text: block.text, time: event.time })
+          // A display-only view card sits at its call, as it does in the live part.
+          else if (block?.type === 'tool-call' && block.name === 'show_view') {
+            const item = viewCardItem(block.arguments)
+            if (item !== undefined) items.push({ ...item, time: event.time })
+          }
         }
         continue
       }

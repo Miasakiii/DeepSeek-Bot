@@ -184,7 +184,7 @@ export function WidgetView({ view, onSubmit, settled = false, answer = null }) {
 
 // The card chrome every view wears, pending or settled: a title bar with a small
 // "View" tag, and a dismiss button while the card still waits for an answer.
-function WidgetCard({ title, view, onSubmit, onDismiss, raised = false, settled = false, answer = null }) {
+export function WidgetCard({ title, view, onSubmit, onDismiss, raised = false, settled = false, answer = null }) {
   const titleId = useId()
   return h('div', {
     className: settled ? 'bt-q bt-q-settled' : raised ? 'bt-q bt-q-raised' : 'bt-q',

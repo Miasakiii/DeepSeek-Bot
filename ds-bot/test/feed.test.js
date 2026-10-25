@@ -162,6 +162,45 @@ test('the chat endpoint pages a Bot\'s own chat from the newest part back', asyn
   assert.equal((await call('chat', { botId: 'nobody' })).error.code, 'bot/not-found')
 })
 
+test('earlier items list a display-only view card at its call, and only that one', async (t) => {
+  // The call block in an assistant message, as dsh-llm's BlockAssembler writes it.
+  const viewCall = (id, args, turn = 8) => ({ type: 'assistant/message', time: 70, data: { turn, message: { content: [{ type: 'tool-call', id, name: 'show_view', arguments: JSON.stringify(args) }] } } })
+  const metric = { type: 'stack', children: [{ type: 'metric', label: 'Steps', value: 3 }] }
+  const record = (event, seq) => ({ event: { ...event, seq } })
+  const { call, stop } = start({
+    pages: {
+      'm1c:end': {
+        records: [
+          // A hidden exchange turn shows none of its calls, its view cards too.
+          record(viewCall('v4', { title: 'Hidden', view: metric }, 7), 40),
+          record({ type: 'assistant/message', time: 70, data: { turn: 8, message: { content: [{ type: 'text', text: 'here you go' }, { type: 'tool-call', id: 'v1', name: 'show_view', arguments: JSON.stringify({ title: '  Status  ', view: metric }) }] } } }, 41),
+          // An interactive card waits for its answer, which lists as its own entry.
+          record(viewCall('v2', { title: 'Pick', view: { type: 'options', id: 'o', options: [{ label: 'A' }] } }, 9), 42),
+          // A display-only card cannot wait for a reply; the host refuses the call.
+          record(viewCall('v5', { title: 'Status', view: metric, await_reply: true }, 10), 43),
+        ],
+        hasMore: false,
+      },
+      'm1:end': {
+        // A blueprint the host refused drew no card, so it gives no entry.
+        records: [record(viewCall('v3', { title: 'Broken', view: { type: 'nope' } }, 3), 3)],
+        hasMore: false,
+      },
+    },
+  })
+  t.after(stop)
+  await call('state')
+  const first = (await call('chat', { botId: 'm1' })).value
+  assert.deepEqual(first.items, [
+    // The current part has no earlier page of its own, so it opens with its line.
+    { kind: 'divider', time: 50 },
+    { kind: 'bot', text: 'here you go', time: 70 },
+    { kind: 'view', title: 'Status', view: metric, time: 70 },
+  ])
+  const second = (await call('chat', { botId: 'm1', cursor: first.cursor })).value
+  assert.deepEqual(second.items, [])
+})
+
 test('the run-stats endpoint reads DSH\'s figures for the current part of a Bot\'s chat', async (t) => {
   const views = { sessionStats: { turns: 3 }, tokenUsage: { cacheReadTokens: 9 }, contextPressure: { contextWindow: 100 } }
   const read = []

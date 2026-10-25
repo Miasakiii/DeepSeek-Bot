@@ -6,7 +6,7 @@ import { linkMentions, mentionTarget, dayLabel, contentText, stripHeader, isHidd
 import { SmileIcon, ReplyIcon, DotsIcon, CheckIcon, DownloadIcon, CopyIcon, MemoryIcon } from './icons.js'
 import { colorOf, toolState, BotMark, RoomAvatar } from './mark.js'
 import { SettledQuestion, PendingQuestion } from './questions.js'
-import { AnsweredReply, WidgetCell } from './widget-cell.js'
+import { AnsweredReply, WidgetCard, WidgetCell } from './widget-cell.js'
 import { SecretToolCell } from './secret-card.js'
 import { t } from './i18n.js'
 import { call } from './api.js'
@@ -435,6 +435,9 @@ function chatRow(row, key, { sessionId, selfId, roster, actions, useUi }) {
     case 'divider': return h(PartLine, { key, time: row.time })
     case 'user': return h(EarlierUser, { key, row })
     case 'answer': return h(AnsweredReply, { key, node: { data: row } })
+    // A display-only card an earlier page lists: the same chrome the live part
+    // draws, read-only by nature — it has nothing to submit.
+    case 'view': return h('div', { key, className: 'bt-q-inline' }, h(WidgetCard, { title: row.title, view: row.view }))
     case 'bot': return h(Bubbles, { key, texts: row.texts, roster, selfId, actions, sessionId: useUi ? sessionId : undefined, msgKey: useUi ? `${sessionId}:${row.time}` : undefined, useUi, fold: FOLD_HUGE })
     case 'event': {
       if (row.role === 'report') return h(GroupEvent, { key, prefix: t('Replies from'), room: roster.roomsById[row.roomId], name: t('a group chat'), roster, actions })
