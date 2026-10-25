@@ -12,6 +12,16 @@ if (host !== undefined && location.origin === host) {
     dataLocation: () => ipcRenderer.invoke('ds-bot:data-location'),
     moveData: (workspace) => ipcRenderer.invoke('ds-bot:move-data', typeof workspace === 'string' ? workspace : undefined),
     teamWorkspaceChanged: (path) => { ipcRenderer.send('ds-bot:team-workspace', String(path)) },
+    // The app's own update state, as the update card's `dshDesktop.updates` reads it: the
+    // page pulls the snapshot and hears every change of it through these.
+    updates: {
+      status: () => ipcRenderer.invoke('ds-bot:updates-status'),
+      subscribe: (listener) => {
+        const note = (_event, status) => { listener(status) }
+        ipcRenderer.on('ds-bot:updates-changed', note)
+        return () => { ipcRenderer.removeListener('ds-bot:updates-changed', note) }
+      },
+    },
   })
   const caption = process.argv.find(value => value.startsWith('--ds-bot-caption='))
   if (caption !== undefined) {

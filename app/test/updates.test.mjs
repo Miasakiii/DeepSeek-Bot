@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { EventEmitter } from 'node:events'
 import { describe, test } from 'node:test'
 import { setTimeout as sleep } from 'node:timers/promises'
+import { showsDshRow } from '../../ds-bot/src/client/dsh-offer.js'
 import { isNewer, RELEASES_URL, watchReleases, watchUpdates } from '../src/updates.mjs'
 
 // electron-updater's AppUpdater, as far as the app uses it. `found` makes the answer of a
@@ -273,6 +275,37 @@ describe('watchReleases', () => {
     assert.deepEqual(unhandled, [])
   })
 
+  test('tells the found release, keeps it through a failed later check, and drops it when a check finds none', async (t) => {
+    t.mock.timers.enable({ apis: ['setInterval'] })
+    let answer = '0.1.9'
+    const updates = watchReleases({
+      current: '0.1.7', arch: 'arm64',
+      fetch: async () => {
+        if (answer === 'fail') throw new Error('offline')
+        return releaseResponse([release(answer)])
+      },
+      log: quietLog(),
+    })
+    t.after(updates.stop)
+    await updates.latest()
+    assert.deepEqual(await updates.status(), { phase: 'available', version: '0.1.9' })
+    answer = 'fail'
+    t.mock.timers.tick(4 * 60 * 60_000)
+    await updates.latest()
+    assert.deepEqual(await updates.status(), { phase: 'available', version: '0.1.9' })
+    answer = '0.1.7'
+    t.mock.timers.tick(4 * 60 * 60_000)
+    await updates.latest()
+    assert.deepEqual(await updates.status(), { phase: 'idle', version: null })
+  })
+
+  test('without a newer release there is nothing to tell', async (t) => {
+    const updates = watchReleases({ current: '0.1.7', arch: 'arm64', fetch: async () => releaseResponse([release('0.1.7')]), log: quietLog() })
+    t.after(updates.stop)
+    await updates.latest()
+    assert.deepEqual(await updates.status(), { phase: 'idle', version: null })
+  })
+
   test('stop clears the interval', async (t) => {
     t.mock.timers.enable({ apis: ['setInterval'] })
     let checks = 0
@@ -396,4 +429,57 @@ describe('watchUpdates', () => {
     t.mock.timers.tick(8 * 60 * 60_000)
     assert.equal(updater.checks, 2)
   })
+
+  test('tells each stage to its subscribers, and status answers the newest snapshot', async (t) => {
+    const updater = new FakeUpdater()
+    const updates = watchUpdates({ updater, beforeInstall: async () => {}, log: quietLog() })
+    t.after(updates.stop)
+    const heard = []
+    const stop = updates.subscribe(status => heard.push(status))
+    // Subscribing tells nothing by itself: the page asks for the snapshot first.
+    assert.deepEqual(heard, [])
+    assert.deepEqual(await updates.status(), { phase: 'idle', version: null })
+    updater.emit('update-available', { version: '0.1.9' })
+    updater.emit('download-progress', { percent: 41 })
+    updater.emit('update-downloaded', { version: '0.1.9' })
+    assert.deepEqual(heard, [
+      { phase: 'available', version: '0.1.9' },
+      { phase: 'downloading', version: '0.1.9' },
+      { phase: 'ready', version: '0.1.9' },
+    ])
+    // The same state again changes nothing; another listener's answer does not either.
+    updater.emit('update-downloaded', { version: '0.1.9' })
+    assert.deepEqual(heard.length, 3)
+    stop()
+    // A failed check or download leaves the snapshot honest, but tells nobody who left.
+    updater.emit('error', new Error('offline'))
+    assert.deepEqual(heard.length, 3)
+    assert.deepEqual(await updates.status(), { phase: 'error', version: '0.1.9' })
+    // A check that finds nothing retires what an earlier one found.
+    updater.emit('update-not-available')
+    assert.deepEqual(await updates.status(), { phase: 'idle', version: null })
+  })
+
+  test('the snapshot is the shape the plugin update card matches against', async (t) => {
+    const updater = new FakeUpdater()
+    const updates = watchUpdates({ updater, beforeInstall: async () => {}, log: quietLog() })
+    t.after(updates.stop)
+    updater.emit('update-downloaded', { version: '0.2.1-alpha.1' })
+    const dsh = { kind: 'app', verified: '0.2.1-alpha.1', current: '0.2.0-rc.2' }
+    assert.equal(showsDshRow(dsh, await updates.status()), true)
+    assert.equal(showsDshRow({ ...dsh, verified: '9.9.9' }, await updates.status()), false)
+    assert.equal(showsDshRow(dsh, undefined), false)
+  })
+})
+
+// The window reads the app's update state through the preload's `dsBotApp.updates`, which
+// the main process answers and pushes over these channels; the two sides must agree on
+// their names, which no import between them checks (main.mjs's IPC table, preload strings).
+test('the main process and the preload name the same updates channels', () => {
+  const main = readFileSync(new URL('../src/main.mjs', import.meta.url), 'utf8')
+  const preload = readFileSync(new URL('../src/preload.cjs', import.meta.url), 'utf8')
+  for (const channel of ['ds-bot:updates-status', 'ds-bot:updates-changed']) {
+    assert.ok(main.includes(channel), `main.mjs does not name ${channel}`)
+    assert.ok(preload.includes(channel), `preload.cjs does not name ${channel}`)
+  }
 })

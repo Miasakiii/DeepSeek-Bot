@@ -274,6 +274,17 @@ export function createTeam() {
     }
     wakeUpdate = checkUpdates
     void checkUpdates()
+    // The app's own updater rides the page's bridge, which main.js installed before
+    // this runs: its state sits beside the host's answer, where the update card
+    // matches it to the verified DSH. In a DSH window the plugin's client does this.
+    const appUpdates = window.dshDesktop?.protocolVersion === 1 ? window.dshDesktop.updates ?? null : null
+    let stopAppUpdates = () => {}
+    if (appUpdates?.status && appUpdates.subscribe) {
+      const take = (app) => { if (!stopped && app) update.set(previous => ({ ...previous, app })) }
+      void appUpdates.status().then(take, () => {})
+      const unsubscribe = appUpdates.subscribe(take)
+      stopAppUpdates = () => unsubscribe?.()
+    }
     const stopNotices = noticeApprovals({ work, roster, shownSession: () => shown.getSnapshot(), openSession: id => actions.openSession(id) })
     const onPageHide = () => leaveVisits(Object.keys(ui.getSnapshot().visits ?? {}))
     window.addEventListener('pagehide', onPageHide)
@@ -283,6 +294,7 @@ export function createTeam() {
       clearInterval(timer)
       clearTimeout(updateTimer)
       wakeUpdate = () => {}
+      stopAppUpdates()
       stopNotices()
       window.removeEventListener('pagehide', onPageHide)
     }

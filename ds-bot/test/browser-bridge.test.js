@@ -80,3 +80,14 @@ test('the bridge installs itself only in the desktop app\'s window, and never ov
   assert.equal(installOwnBrowserBridge(web), undefined)
   assert.equal('dshDesktop' in web, false)
 })
+
+test("the app's own update state rides the bridge, when the preload provides it", () => {
+  // The card reads `dshDesktop.updates` (the plugin client's update loop); the app's
+  // preload hands its IPC-backed pair over as `dsBotApp.updates`.
+  const updates = { status: () => Promise.resolve({ phase: 'idle', version: null }), subscribe: () => () => {} }
+  const own = { dsBotApp: { updates }, document: new FakeDocument() }
+  assert.equal(installOwnBrowserBridge(own).updates, updates)
+  // An older app without it installs the bridge just the same, without the member.
+  const bare = { dsBotApp: {}, document: new FakeDocument() }
+  assert.equal('updates' in installOwnBrowserBridge(bare), false)
+})

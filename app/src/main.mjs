@@ -24,6 +24,7 @@ import { CAPTION_HEIGHT, cssColor, micaAvailable, nativeThemeSource } from './wi
 const IPC = {
   caption: 'ds-bot:caption-colors', nativeTheme: 'ds-bot:native-theme', fullscreen: 'ds-bot:fullscreen',
   dataLocation: 'ds-bot:data-location', moveData: 'ds-bot:move-data', teamWorkspace: 'ds-bot:team-workspace',
+  updatesStatus: 'ds-bot:updates-status', updatesChanged: 'ds-bot:updates-changed',
 }
 const MOVE_PROBLEMS = { drive: 'moveDrive', nested: 'moveNested', workspace: 'moveWorkspace', program: 'inProgram', notEmpty: 'moveNotEmpty' }
 const UPDATE_CHECK_WAIT_MS = 15_000
@@ -135,6 +136,8 @@ async function start() {
     // Not during the import, which a restart would cut short; before the Host, so that an
     // update can still come when this version's Host does not start.
     updates = startUpdates()
+    // The window pulls the update state when it loads; every change after that is pushed.
+    updates?.subscribe(status => { mainWindow?.webContents.send(IPC.updatesChanged, status) })
     host = newHost()
     return host.start()
   })()
@@ -154,6 +157,11 @@ async function start() {
     if (fixed || !fromWindow(event) || typeof path !== 'string' || !isAbsolute(path)) return
     places = { ...places, workspace: path }
     saveLocations(places)
+  })
+  // The window's update card reads the app's own update state through the page's bridge.
+  ipcMain.handle(IPC.updatesStatus, (event) => {
+    assertWindow(event)
+    return updatesSnapshot()
   })
   if (process.platform === 'win32') {
     // Windows ignores the alpha of the caption buttons' color, so they take the opaque color
@@ -319,6 +327,9 @@ async function moveData(workspace) {
 
 const notePage = message => `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html><meta charset="utf-8"><meta name="color-scheme" content="light dark">
 <body style="margin:0;height:100vh;display:grid;place-items:center;font:14px system-ui,sans-serif;background:Canvas;color:CanvasText">${message.replace(/[&<>]/gu, char => `&#${String(char.charCodeAt(0))};`)}</body>`)}`
+
+// A run without its own updater (a development run) reports that nothing is going on.
+const updatesSnapshot = () => updates?.status() ?? Promise.resolve({ phase: 'idle', version: null })
 
 // Windows updates itself; macOS asks to download the new version. Throwaway runs check only a
 // given feed and never ask.

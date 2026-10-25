@@ -73,9 +73,32 @@ function isHttpsPage(page) {
   }
 }
 
+// The app's own update state as the window's update card reads it through the bridge
+// (`dshDesktop.updates` in the plugin's client): `phase` names the updater's stage, in
+// the terms the card matches against (its `dsh-offer.js`), and `version` is what a check
+// found. `status()` answers the snapshot; `subscribe` hears every change of it.
+function appStatus() {
+  let status = { phase: 'idle', version: null }
+  const listeners = new Set()
+  return {
+    // A stage of the same update keeps the version it found; passing null clears it.
+    set(phase, version = status.version) {
+      if (phase === status.phase && version === status.version) return
+      status = { phase, version }
+      for (const listener of listeners) listener(status)
+    },
+    status: () => Promise.resolve({ ...status }),
+    subscribe(listener) {
+      listeners.add(listener)
+      return () => { listeners.delete(listener) }
+    },
+  }
+}
+
 export function watchReleases({ current, arch, fetch = globalThis.fetch, ask, open, feed = RELEASES_URL, log = console }) {
   let asked
   let latest = Promise.resolve(null)
+  const app = appStatus()
   const check = () => {
     latest = (async () => {
       try {
@@ -106,7 +129,11 @@ export function watchReleases({ current, arch, fetch = globalThis.fetch, ask, op
           }
           if (found === undefined || isNewer(version, found.version)) found = { version, page: release.html_url }
         }
-        if (found === undefined) return null
+        if (found === undefined) {
+          app.set('idle', null)
+          return null
+        }
+        app.set('available', found.version)
         log.info(`DeepSeek Bot: update ${found.version} available`)
         if (ask !== undefined && asked !== found.version) {
           asked = found.version
@@ -123,7 +150,7 @@ export function watchReleases({ current, arch, fetch = globalThis.fetch, ask, op
   }
   check()
   const timer = setInterval(check, CHECK_EVERY_MS)
-  return { stop: () => { clearInterval(timer) }, latest: () => latest }
+  return { stop: () => { clearInterval(timer) }, latest: () => latest, status: app.status, subscribe: app.subscribe }
 }
 
 /**
@@ -140,8 +167,11 @@ export function watchReleases({ current, arch, fetch = globalThis.fetch, ask, op
  *   stop: () => void,
  *   latest: () => Promise<{ version: string, downloaded: Promise<boolean> } | null>,
  *   install: () => Promise<void>,
+ *   status: () => Promise<{ phase: string, version: string | null }>,
+ *   subscribe: (listener: (status: { phase: string, version: string | null }) => void) => () => void,
  * }} `latest` is what the newest check found: the version and whether its download finished.
- *   `install` stops the Host and runs the installer, which opens the app again.
+ *   `install` stops the Host and runs the installer, which opens the app again. `status`
+ *   and `subscribe` carry the app's own update state to the window's update card.
  */
 export function watchUpdates({ updater, beforeInstall, ask, feed, log = console }) {
   updater.autoDownload = true
@@ -151,7 +181,16 @@ export function watchUpdates({ updater, beforeInstall, ask, feed, log = console 
     await beforeInstall()
     updater.quitAndInstall(true, true)
   }
+  const app = appStatus()
   let asked
+  // The stages the update card matches against, as electron-updater reports them. A check
+  // that finds nothing retires what an earlier one found; a failed download also comes as
+  // an 'error' event.
+  updater.on('update-available', ({ version }) => { app.set('available', version) })
+  updater.on('download-progress', () => { app.set('downloading') })
+  updater.on('update-downloaded', ({ version }) => { app.set('ready', version) })
+  updater.on('update-not-available', () => { app.set('idle', null) })
+  updater.on('error', () => { app.set('error') })
   updater.on('update-downloaded', ({ version }) => {
     log.info(`DeepSeek Bot: update ${version} downloaded`)
     if (ask === undefined || asked === version) return
@@ -169,5 +208,5 @@ export function watchUpdates({ updater, beforeInstall, ask, feed, log = console 
   }
   check()
   const timer = setInterval(check, CHECK_EVERY_MS)
-  return { stop: () => { clearInterval(timer) }, latest: () => latest, install }
+  return { stop: () => { clearInterval(timer) }, latest: () => latest, install, status: app.status, subscribe: app.subscribe }
 }

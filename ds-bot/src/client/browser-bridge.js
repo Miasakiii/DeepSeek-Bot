@@ -66,7 +66,9 @@ export function createBrowserBridge({ document: doc, randomId = () => Math.rando
 /**
  * Give a window of the desktop app the bridge when no shell gave it one. The app's
  * preload marks its window with `dsBotApp` in both of its front ends; a `dshDesktop`
- * that already exists (DSH Desktop) is never replaced.
+ * that already exists (DSH Desktop) is never replaced. The app's own update state rides
+ * along: the preload provides it as `dsBotApp.updates`, and the update card reads it as
+ * `dshDesktop.updates`.
  * @param {any} [scope] the window, for tests; the page's own `window` by default
  * @returns {any} the bridge that was installed, or undefined when this window gets none
  */
@@ -74,5 +76,6 @@ export function installOwnBrowserBridge(scope) {
   const w = scope ?? globalThis.window
   if (w === undefined || w.dshDesktop !== undefined || w.dsBotApp === undefined) return undefined
   w.dshDesktop = createBrowserBridge({ document: w.document })
+  if (w.dsBotApp.updates !== undefined) w.dshDesktop.updates = w.dsBotApp.updates
   return w.dshDesktop
 }

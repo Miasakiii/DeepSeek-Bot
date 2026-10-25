@@ -5480,6 +5480,10 @@ function chatRow(row, key, { sessionId, selfId, roster, actions, useUi }) {
       return (0, import_react9.createElement)(EarlierUser, { key, row });
     case "answer":
       return (0, import_react9.createElement)(AnsweredReply, { key, node: { data: row } });
+    // A display-only card an earlier page lists: the same chrome the live part
+    // draws, read-only by nature — it has nothing to submit.
+    case "view":
+      return (0, import_react9.createElement)("div", { key, className: "bt-q-inline" }, (0, import_react9.createElement)(WidgetCard, { title: row.title, view: row.view }));
     case "bot":
       return (0, import_react9.createElement)(Bubbles, { key, texts: row.texts, roster, selfId, actions, sessionId: useUi ? sessionId : void 0, msgKey: useUi ? `${sessionId}:${row.time}` : void 0, useUi, fold: FOLD_HUGE });
     case "event": {
@@ -15310,6 +15314,7 @@ function installOwnBrowserBridge(scope) {
   const w = scope ?? globalThis.window;
   if (w === void 0 || w.dshDesktop !== void 0 || w.dsBotApp === void 0) return void 0;
   w.dshDesktop = createBrowserBridge({ document: w.document });
+  if (w.dsBotApp.updates !== void 0) w.dshDesktop.updates = w.dsBotApp.updates;
   return w.dshDesktop;
 }
 
