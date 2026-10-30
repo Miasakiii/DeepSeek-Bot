@@ -51,7 +51,7 @@
 - 前置：
   - deepseek-harness checkout：`ds-bot/README.md:231` 要求放在 `../deepseek-harness` 或以 `DSH_HARNESS` 指定；版本 `0.2.1-rc.2`（`ds-bot/README.md:7`，与 `ds-bot/dev/harness/package.json` 的 `@deepseek-ai/dsh` 一致）。`dev/bench.sh:25-32` 的解析顺序：环境变量 `DSH_HARNESS` → 仓库根 `deepseek-harness` → 主工作树相对路径 → 主仓库根。
   - POSIX `sh` 与 `setsid`（`bench.sh:34-49` 用 setsid 进程组启停进程）。
-  - pnpm 在 PATH：`bench.sh:64` 建 web profile 用 `pnpm install`、`bench.sh:103` 起 web 进程用 `pnpm -s dsh`；`ds-bot/README.md:231` 明列 Node 24 + pnpm。本机 pnpm 在 PATH（`/c/Users/Asakii/AppData/Roaming/npm/pnpm`），非阻塞。
+  - pnpm 在 PATH：`bench.sh:64` 建 web profile 用 `pnpm install`、`bench.sh:103` 起 web 进程用 `pnpm -s dsh`；`ds-bot/README.md:231` 明列 Node 24 + pnpm。本机 pnpm 在 PATH（实测可执行），非阻塞。
 - 本机现状（2026-10-27 实测）：`../deepseek-harness`（即 `Desktop\deepseek-harness`）不存在；仓库根 `deepseek-harness` 不存在；`ds-bot/deepseek-harness` 不存在；`DSH_HARNESS` 未设置；`command -v setsid` 无结果——`setsid` 在本机 Windows Git Bash 缺失，属平台性阻塞（与决策日志 2026-10-23 C0 盘点「bench.sh 本机 Windows 不可执行」一致，ROADMAP L135）。
 - 命令（bench 起后跑 smoke；端口各留空闲）：
 

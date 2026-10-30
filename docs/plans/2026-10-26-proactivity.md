@@ -153,7 +153,7 @@ DS Bot 现在是一支"反应式"的 Bot 团队：用户发消息、Bot 之间�
 - `gap` + `evidence[]`：差距是什么、凭什么这么说（锚点必填）。
 - `action`：一句话说明要做什么；具体步骤不进提案卡。
 - `cost`：预计耗时 / token / 会影响谁。
-- `reversibility`：`easy`（可撤回，如只读分析、草稿）/ `hard`（难撤回，如改文件、发帖）/ `none`（不可撤回，如对外发送、删东西）。
+- `reversibility`：`easy`（可撤回，如只读分析、写方案）/ `hard`（难撤回，如改文件、发帖）/ `none`（不可撤回，如对外发送、删东西）。
 - `reach`：`self`（只影响这个 Bot）/ `team`（影响别的 Bot 或团队文件）/ `outside`（对外）。
 - `verify`：做完怎么验证，对上目标里的 `acceptance`。
 - 三个字段 `reversibility` / `reach` / `verify` **必填**，host 校验缺失即拒绝展示为提案（拒绝时给可修复的错误和字段路径，与视图卡校验同一套做法）。
