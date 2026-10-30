@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { after, before, describe, test } from 'node:test'
-import { BlockAssembler } from '@deepseek-ai/dsh-llm'
+import { BlockAssembler } from '../src/host/vendor/messages.js'
 import { PROTOCOLS } from '../src/host/providers.js'
 import { serializeRequest, streamWire } from '../src/host/llm.js'
 
@@ -167,4 +167,34 @@ describe('the mock and the tap on the three wires', () => {
       assert.equal(blocks.length, protocol === 'openai-completions' ? 1 : 2, protocol)
     }
   })
+})
+
+// The two places where the vendor BlockAssembler and DSH's disagree (plan 2026-10-30
+// §1.2 gap 4, decision N-02), locked as the vendor's current semantics — known
+// divergences, not changes to them. ds-bot's own producers never trigger either shape:
+// llm.js's block tracker always opens a block before its deltas and closes a phase
+// before the next one starts, and parts.js and groups.js pair their starts and ends
+// explicitly. The nine ctx.llm.stream call sites, though, consume the chunks DSH's own
+// producers emit, so a producer that misbehaves this way reaches the vendor assembler.
+test('a block type change on an open index opens a new block and drops what it held', () => {
+  // DSH's ensure() keeps the open partial whatever type the next delta names and
+  // appends the delta to it, so its assembler would report one text block reading
+  // "first second". The vendor opens a fresh block at the index instead.
+  const assembler = new BlockAssembler()
+  assembler.push({ type: 'block-start', index: 0, blockType: 'text' })
+  assembler.push({ type: 'text-delta', index: 0, text: 'first ' })
+  assembler.push({ type: 'reasoning-delta', index: 0, text: 'second' })
+  assert.deepEqual(assembler.blocks(), [{ type: 'reasoning', text: 'second' }])
+})
+
+test('a delta after block-end on the same index overwrites the closed block', () => {
+  // DSH ignores a delta for an index its block-end already closed, so its assembler
+  // would report the finished block, "done". The vendor replaces the closed entry, and
+  // the late delta's block takes its place.
+  const assembler = new BlockAssembler()
+  assembler.push({ type: 'block-start', index: 0, blockType: 'text' })
+  assembler.push({ type: 'text-delta', index: 0, text: 'done' })
+  assembler.push({ type: 'block-end', index: 0, block: { type: 'text', text: 'done' } })
+  assembler.push({ type: 'text-delta', index: 0, text: 'late' })
+  assert.deepEqual(assembler.blocks(), [{ type: 'text', text: 'late' }])
 })
