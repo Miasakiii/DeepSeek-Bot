@@ -8,7 +8,7 @@ import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:
 import { readFileSync } from 'node:fs'
 import { chmod, mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { LlmAdapter, LlmError, assertUsableApiKey, attributionHeaders, fileHandleText } from '@deepseek-ai/dsh-llm'
+import { LlmError, assertUsableApiKey, attributionHeaders, fileHandleText } from './vendor/llm-errors.js'
 import { PROTOCOLS, checkKey, keyRefFor } from './providers.js'
 import { replaceFile } from './files.js'
 
@@ -461,10 +461,11 @@ export async function* streamWire({ protocol, baseURL, apiKey, body, signal, att
 
 // The models an endpoint reports about itself: GET {baseURL}/models under the route's
 // own auth, in the OpenAI-compatible listing shape (`data[]`, or Ollama's `models[]`).
-// A key typed for the question goes with it and is not stored.
-export async function discoverWireModels({ protocol, baseURL, apiKey, signal, fetchImpl = fetch }) {
+// A key typed for the question goes with it and is not stored. `identity` names the
+// caller in the request's User-Agent, as the shell installed it.
+export async function discoverWireModels({ protocol, baseURL, apiKey, signal, identity, fetchImpl = fetch }) {
   if (!PROTOCOLS.includes(protocol)) throw invalid(`The protocol is one of: ${PROTOCOLS.join(', ')}`)
-  const request = wireRequest({ protocol, baseURL, apiKey, attribution: attributionHeaders() })
+  const request = wireRequest({ protocol, baseURL, apiKey, attribution: attributionHeaders(identity) })
   let response
   try {
     response = await fetchImpl(`${checkEndpoint(baseURL)}/models`, { headers: request.headers, signal })
@@ -696,12 +697,18 @@ async function keyFor(entry, vault) {
 // The adapter for the routes the own directory holds. One generation of a route — the
 // entry as it stood when the call was prepared — owns both the model metadata and the
 // dispatch, so a directory change between the two cannot mix them.
-export class BotLlmAdapter extends LlmAdapter {
-  constructor({ routes, vault, attachments }) {
+// It takes the class DSH registers adapters under as its base: only the shell may import
+// that one, and the methods here stay free of DSH so the tests run without a harness.
+export const botLlmAdapter = Base => class extends Base {
+  constructor({ routes, vault, attachments, identity }) {
     super()
     this.routes = routes
     this.vault = vault
     this.attachments = attachments
+    // What every request this adapter sends names of its caller; the shell passes the
+    // running harness's own identity, and a module used without one keeps the vendor
+    // default in attributionHeaders.
+    this.identity = identity
   }
 
   entry(provider) {
@@ -770,21 +777,29 @@ export class BotLlmAdapter extends LlmAdapter {
       apiKey,
       body,
       signal: options.signal,
-      attribution: attributionHeaders(),
+      attribution: attributionHeaders(this.identity),
     })
   }
 }
 
+// The class the tests and anything outside DSH construct.
+export const BotLlmAdapter = botLlmAdapter(Object)
+
 // ---- install: the directory, the vault and the registration ----
 
-export function install(rt) {
+// `Adapter` is the registered adapter class: the shell passes the one based on DSH's
+// LlmAdapter, and everything else gets the plain one. `identity` is what a provider
+// request names of its caller — the shell passes the running harness's own identity, so
+// the User-Agent stays the one DSH itself would have sent.
+export function install(rt, Adapter = BotLlmAdapter, identity) {
   const { ctx, state } = rt
   const vault = keyVault(rt.home)
   const directory = () => Object.values(state.providers ?? {})
-  const adapter = new BotLlmAdapter({
+  const adapter = new Adapter({
     routes: directory,
     vault,
     attachments: () => ctx.get?.('attachments'),
+    identity,
   })
   let handle
   // The routes this registration currently holds; the rest of what the registry serves
@@ -829,6 +844,8 @@ export function install(rt) {
   Object.assign(rt, {
     ownProviders: directory,
     ownKeyVault: vault,
+    // What the wire clients name of their caller, for the requests no stream carries.
+    ownIdentity: identity,
     // The directory write path: the entry is validated as it is stored, the key goes to
     // the vault under the entry's reference, and the registration follows the change.
     async setOwnProvider(entry, key) {

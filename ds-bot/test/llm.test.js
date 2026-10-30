@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { format } from 'node:util'
-import { BotLlmAdapter, install as installLlm, keyVault, providerEntry, serializeRequest, streamWire, wireFailure, wireRequest } from '../src/host/llm.js'
+import { BotLlmAdapter, discoverWireModels, install as installLlm, keyVault, providerEntry, serializeRequest, streamWire, wireFailure, wireRequest } from '../src/host/llm.js'
 
 // A scripted provider: answers every request with the given server-sent events.
 function serve(events, { status = 200 } = {}) {
@@ -382,7 +382,7 @@ function fakeLlm({ served = [] } = {}) {
   }
 }
 
-function fakeRuntime({ ctx, home, state = { providers: {} } }) {
+function fakeRuntime({ ctx, home, state = { providers: {} }, identity }) {
   const warnings = []
   const rt = {
     ctx,
@@ -391,7 +391,7 @@ function fakeRuntime({ ctx, home, state = { providers: {} } }) {
     warn: (...args) => warnings.push(format(...args)),
     save: async () => {},
   }
-  installLlm(rt)
+  installLlm(rt, BotLlmAdapter, identity)
   return { rt, warnings }
 }
 
@@ -517,6 +517,41 @@ test('install registers the directory once it has a route and follows its change
     assert.deepEqual(taken.registrations[0].replaced, [[]])
     assert.equal(await second.rt.removeOwnProvider('mine'), false)
   } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
+test('the identity install is given is the identity the own wire requests send', async () => {
+  // Locks the C0.1 attribution fix (plan 2026-10-30 §1.2 gap 3, decision N-01): the
+  // registration shell passes the running harness's own identity through install, and
+  // both requests this module makes — a streamed call and the models an endpoint reports
+  // about itself — name that identity in their User-Agent. A request that went out on
+  // the vendor default instead would say deepseek-harness/0.0.1, which is what the thin
+  // replacement sent before the identity was threaded through.
+  const identity = { product: 'test-harness', version: '9.9.9', url: 'https://example.invalid' }
+  const wanted = 'test-harness/9.9.9 (+https://example.invalid)'
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-identity-'))
+  const seen = []
+  const server = createServer((req, res) => {
+    seen.push({ url: req.url, agent: req.headers['user-agent'] })
+    res.writeHead(200, { 'content-type': 'text/event-stream' })
+    res.end('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n')
+  })
+  await new Promise(done => server.listen(0, '127.0.0.1', done))
+  try {
+    const llm = fakeLlm()
+    const { rt } = fakeRuntime({ ctx: { get: () => undefined, llm }, home, identity })
+    await rt.setOwnProvider({ id: 'own', protocol: 'openai-completions', baseURL: `http://127.0.0.1:${server.address().port}`, models: ['m1'] }, 'sk-test')
+    // The adapter install registered carries the identity into every request it sends.
+    const adapter = llm.registrations[0].adapter
+    await collect(adapter.stream({ provider: 'own', model: 'm1', messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }] }))
+    assert.deepEqual(seen, [{ url: '/chat/completions', agent: wanted }])
+    // The models an endpoint reports about itself, asked outside any stream, read the
+    // same identity off the runtime.
+    await discoverWireModels({ protocol: 'openai-completions', baseURL: `http://127.0.0.1:${server.address().port}`, apiKey: 'sk-test', identity: rt.ownIdentity })
+    assert.deepEqual(seen.at(-1), { url: '/models', agent: wanted })
+  } finally {
+    await new Promise(done => server.close(done))
     rmSync(home, { recursive: true, force: true })
   }
 })

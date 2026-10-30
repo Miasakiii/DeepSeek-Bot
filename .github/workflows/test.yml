@@ -39,6 +39,7 @@ jobs:
       - run: npm test
       - run: node scripts/build-client.mjs --check
       - run: npm run lint
+      - run: node scripts/check-dsh-imports.mjs
 
   scan:
     name: Leak scan
