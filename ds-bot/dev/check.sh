@@ -1,6 +1,6 @@
 #!/bin/sh
 # One-command check of this checkout on both ends, with the mock model only:
-#   unit     npm test
+#   unit     npm test and the contract locks (npm run test:contract)
 #   build    client.js matches src/client (build-client.mjs --check)
 #   lint     npm run lint (warnings do not fail)
 #   smoke    a fresh smoke bench and dev/smoke.mjs
@@ -83,7 +83,7 @@ need_ports() {
   done
 }
 
-step_unit() { cd "$PLUGIN" && npm test; }
+step_unit() { cd "$PLUGIN" && npm test && npm run test:contract; }
 step_build() { cd "$PLUGIN" && node scripts/build-client.mjs --check; }
 step_lint() { cd "$PLUGIN" && npm run lint; }
 step_smoke() {
