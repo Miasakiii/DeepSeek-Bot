@@ -4,10 +4,16 @@ All notable changes to DS Bot are listed here. The format follows [Keep a Change
 
 ## [Unreleased]
 
+### Added
+
+- DS Bot keeps its own list of model providers, with their keys, instead of writing DSH's settings. **Settings → Models** (in the app's own window) adds a provider over OpenAI Chat Completions, OpenAI Responses or Anthropic Messages — a cloud API or a self-hosted endpoint such as Ollama, vLLM, LM Studio or one-api — and can fetch the models a base URL serves. Keys are AES-256-GCM encrypted in `<home>/keys.json` and never appear in `state.json` or logs. The first time this version opens a team, the providers set up in DSH are copied into DS Bot's own list, so a team saved by an older version keeps the models it ran on.
+- The desktop app's own window is served by the plugin's own HTTP server: `POST /api/bot`, the `GET /api/bot/feed` stream and the window's files, on `127.0.0.1` and authenticated with its own token. It stays off unless a port is named, so a DSH window is untouched. The own window also carries the account sign-in and sign-out entries.
+
 ### Changed
 
 - The plugin ships as the package `miasaki-dsbot` with the plugin id `miasaki-bot`, so it installs beside the upstream `ds-bot` instead of over it. The team moves from `bot/` to `miasaki-dsbot/` in the DSH home the first time this plugin opens it; when another dsh is using that team at the time, this plugin starts a team of its own instead.
 - The desktop app keeps its data in `~/.miasaki-dsbot` and takes its updates from this repository's releases. Its application id is `io.github.miasakiii.dsbot`: the first release under the new id installs beside an app built with the old one, so uninstall the old app first.
+- The desktop app's own window is the default form now; `DS_BOT_OWN_UI=0` still falls back to the DSH web front-end.
 
 ## [0.2.2] - 2026-10-25
 
