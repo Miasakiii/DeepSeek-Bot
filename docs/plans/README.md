@@ -44,6 +44,7 @@
 | [上下文与记忆](2026-10-09-context-and-memory.md) | 对话分段、上下文管家（压缩还是换段）、交接包、`read_own_chat`；记忆的存放、格式、权限、整理和冻结 |
 | [Bot 运行配置](2026-10-10-bot-runtime.md) | Agent 预设、每个 Bot 的模型和思考强度、工作文件夹、能力（MCP、技能、能力包） |
 | [长消息](2026-10-16-long-messages.md) | state.json 只存开头；超过 2 万字的 Bot 消息转成 DSH 文件；成员和界面怎么读全文 |
+| [Linux 桌面包](2026-10-21-linux-app-package.md) | 一个 AppImage 通吃各发行版 + deb 兜底；应用内自更新与卸载，以及 ds-bot/dev/desktop-linux 的桌面脚本 |
 | [桌面应用](2026-10-16-desktop-app.md) | 壳、引擎和界面怎么分；锁定的 DSH 版本、独立的数据位置、首次启动和导入、插件怎么兼容 DSH、安装和更新 |
 | [Bot 之间派活](2026-10-16-bot-handoffs.md) | Bot 看得到对方的状态；没读的消息合成一条；派活树：下面的活交回后才往上交，不许发给在等结果的 Bot；不设总量和链长上限 |
 | [Bot 视图](2026-10-20-widget-views.md) | Bot 在回答里画视图：固定组件目录的 JSON 蓝图（含图表、输入和本地公式），目录外的放沙箱 html；提问卡回路的泛化 |
