@@ -40,6 +40,7 @@ import * as thinking from './src/host/thinking.js'
 import * as channel from './src/host/channel.js'
 import * as feed from './src/host/feed.js'
 import * as outlet from './src/host/outlet.js'
+import { createHost } from './src/host/rt/dsh.js'
 import { holderLive, homeLock } from './src/host/home-lock.js'
 
 export { COLORS } from './src/host/constants.js'
@@ -85,6 +86,9 @@ export function createRuntime(ctx, config = {}) {
   if (config.home === undefined) adoptLegacyHome(dshHome, home)
   const rt = {
     ctx,
+    // The C0.2 contract layer over the same ctx (src/host/rt/host.js): the modules move to
+    // it slice by slice; nothing calls it yet, so mounting it changes no behavior.
+    host: createHost(ctx),
     config,
     dshHome,
     home,
