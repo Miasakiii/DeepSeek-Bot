@@ -29,7 +29,7 @@ Tested with dsh `0.2.1-rc.2` (Web) and `0.2.0-rc.2` (Web and Desktop).
 - **Images**: for a model that cannot read images, a vision model first turns the image into text.
 - **Secrets**: a Bot asks for an API key or token with a card in its own chat and never sees the value. See [Secrets](#secrets).
 - **Usage**: Settings → Usage shows token usage by time (24 hours to 12 months, or days picked on a calendar), by Bot and by model, with a page for each Bot and each model. Calls that a Session logs are read from the logs, so older chats count too. Calls that leave no log (checkpoints, handoff notes, the steward, image readings, dsh titles and compaction) are counted while they stream, from the time the plugin runs. Tokens only, no cost.
-- **Make it yours**: name, role, instructions, model and look (20 characters and 12 colors, or your own photo) for each Bot; a theme, an accent color and an avatar animation level (quiet, normal or lively) for the team. A pinned Bot or group chat shows a small pushpin in the sidebar. Settings has these pages: General (look), Bots (Main Bots and each Bot's settings), Group chats (each group's settings), Connectors, Capabilities, Scheduled tasks, Usage, Secrets, Feedback and About DS Bot (versions, updates and links).
+- **Make it yours**: name, role, instructions, model and look (20 characters and 12 colors, or your own photo) for each Bot; a theme, an accent color and an avatar animation level (quiet, normal or lively) for the team. A pinned Bot or group chat shows a small pushpin in the sidebar. Settings has these pages: General (look), Models (model providers and their keys), Bots (Main Bots and each Bot's settings), Group chats (each group's settings), Connectors, Capabilities, Scheduled tasks, Usage, Secrets, Feedback and About DS Bot (versions, updates and links).
 
 ## Install
 
@@ -97,11 +97,11 @@ The same card can carry DSH itself: a DS Bot release may name the DSH release it
 
 ## Models
 
-Model providers are set up with dsh's `llm-pi-ai` plugin in `cordis.patch.yml`. Every Bot runs on one model of its own, from the models DSH serves. A new team's first Main Bot has none: its chat opens on a model card and it greets the user only after a pick. The Create Bot form starts on the DSH default model. The Bot's details panel and settings (or a Main Bot's `update_bot`) change it; a Bot whose model is no longer served shows the card again. A team saved by an older version keeps the model each Bot last ran on.
+Every Bot runs on one model of its own. DS Bot keeps its own list of model providers — their base URL, protocol, models and key — in the plugin's data folder, and **Settings → Models** adds, edits and removes them in a window that has no DSH settings of its own. A provider speaks one of three protocols (OpenAI Chat Completions, OpenAI Responses or Anthropic Messages) and points at a base URL: a cloud API, or a self-hosted endpoint such as Ollama, vLLM, LM Studio or one-api over `openai-completions`. The page can fetch the models a base URL serves. The first time this version opens a team, the providers that were set up with dsh's `llm-pi-ai` plugin are copied into DS Bot's own list, so a team saved by an older version keeps the models it ran on; dsh's DeepSeek account route keeps working as before. A new team's first Main Bot has none: its chat opens on a model card and it greets the user only after a pick. The Create Bot form starts on the default model. The Bot's details panel and settings (or a Main Bot's `update_bot`) change it; a Bot whose model is no longer served shows the card again.
 
 - Give every model a `contextWindow`. DS Bot takes its lines from it: the usable window is the window minus the reply reserve (`maxTokens`), the hard line is 95% of that, and the check line is `checkRatio` of it. A model without `contextWindow` gets the adapter's default (262,144 tokens for `llm-pi-ai`), which may be wrong for that model; a model that reports no window at all counts as 500,000.
 - To send images, the provider needs `defaultInput: [ text, image ]`.
-- Keep API keys out of the repository. Use dsh's own key storage or environment variables.
+- Keys are kept in `<home>/keys.json`, AES-256-GCM encrypted with file mode 0600, and never appear in `state.json` or logs. Keep API keys out of the repository; environment variables still work for a key you do not save.
 
 ## Memory
 

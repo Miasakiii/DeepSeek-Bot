@@ -28,7 +28,7 @@ DeepSeek Bot（简称 DS Bot）是一个基于 [DeepSeek Harness](https://github
 
 **作为 dsh 插件**
 
-先装好 dsh，并在 dsh 里配好至少一个模型。ds bot 直接使用 dsh 里的模型。
+先装好 dsh。ds bot 自己维护一份模型服务商列表：第一次打开团队时会把 dsh 里已配好的服务商复制进来，App 的自有窗口还可以在 设置 → 模型 里继续添加。
 
 **dsh Desktop（Windows、macOS）**
 

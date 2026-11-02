@@ -28,7 +28,7 @@ At the first start the app asks where to keep its data and the Bots' files, and 
 
 **As a plugin in DSH**
 
-First install DSH and set up at least one model in it. DS Bot uses the models from DSH.
+First install DSH. DS Bot keeps its own list of model providers: the first time it opens a team it copies the providers from DSH, and the app's own window can add more under Settings → Models.
 
 **DSH Desktop (Windows, macOS)**
 
