@@ -701,7 +701,7 @@ class ToolBoard {
     }
   }
 
-  builtin(exec) {
+  async builtin(exec) {
     for (const entry of [...this.guards]) {
       const denial = entry.guard(exec)
       if (typeof denial === 'string') return toolError(new Error(denial))
@@ -711,7 +711,9 @@ class ToolBoard {
       return toolError(Object.assign(new Error(`unknown tool "${exec.name}"`), { info: { name: 'ToolNotFoundError', code: 'UNKNOWN_TOOL' } }))
     }
     try {
-      const value = tool.execute(exec.arguments, exec)
+      // DSH waits for the tool body: a rejection comes back as a structured tool error here
+      // instead of escaping as unhandled activity, and output.render sees the value.
+      const value = await tool.execute(exec.arguments, exec)
       return Object.freeze({ isError: false, value, content: tool.output.render(exec.arguments, value) })
     } catch (error) {
       return toolError(error)
@@ -1364,9 +1366,10 @@ const defaultRuntime = (ctx, { home, config = {} }) => ({
 //     作用域，src/host 对八服务的属性读因此可用，可选服务照契约走 ctx.get；
 //   - rt 默认按 index.js:82-103 的形状造；传 create（例如 createRuntime 本身）就改喂真实装配，
 //     断言一字不改。
-// 为什么用依赖注入而不是直接 import index.js：createRuntime 经 llm-dsh.js 闭包 import
-// @deepseek-ai/dsh-llm，fake-host 必须留在闭包外（C0.3 的完成判据是「无 dev/harness 的环境下
-// npm test 全绿」），所以工厂只造 ctx、rt 由调用方决定。
+// 为什么用依赖注入而不是直接 import index.js：index.js 是 DSH 装配入口，静态 import llm-dsh.js
+// 取 LlmAdapter 基类；DSH-free 的核心是 src/host/runtime.js（基类改由 deps 注入），fake-host
+// 必须留在闭包外（C0.3 的完成判据是「无 dev/harness 的环境下 npm test 全绿」），所以工厂只造
+// ctx、rt 由调用方决定。
 export function fakeRuntime({ home = process.cwd(), config = {}, services = {}, create } = {}) {
   const host = fakeHost({ services, home })
   const mount = host.plugin(host.rootFiber, { name: 'miasaki-dsbot', inject: [...INJECTED_SERVICES], apply() {} })
