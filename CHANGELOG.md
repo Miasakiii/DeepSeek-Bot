@@ -15,6 +15,10 @@ All notable changes to DS Bot are listed here. The format follows [Keep a Change
 - The desktop app keeps its data in `~/.miasaki-dsbot` and takes its updates from this repository's releases. Its application id is `io.github.miasakiii.dsbot`: the first release under the new id installs beside an app built with the old one, so uninstall the old app first.
 - The desktop app's own window is the default form now; `DS_BOT_OWN_UI=0` still falls back to the DSH web front-end.
 
+### Fixed
+
+- The plugin's own HTTP outlet no longer prints its access token to the log. The window is launched with the token it gets directly from the outlet, and a log line anyone who can read the app's output could open.
+
 ## [0.2.2] - 2026-10-25
 
 ### Added
