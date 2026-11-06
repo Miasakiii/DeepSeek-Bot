@@ -9,7 +9,7 @@ import { columnOpened, createSwitchWindow, drawerOpened, rightColumnOpen } from 
 
 // jsdom comes from the harness that test/harness-resolve.mjs found, like the dsh packages.
 const PLUGIN = dirname(dirname(fileURLToPath(import.meta.url)))
-const { JSDOM } = createRequire(join(process.env.DSH_HARNESS ?? join(PLUGIN, '..', 'deepseek-harness'), 'package.json'))('jsdom')
+const { JSDOM } = createRequire(join(process.env.DSH_HARNESS ?? PLUGIN, 'package.json'))('jsdom') // jsdom is a devDependency, so the plugin itself answers when no harness is set
 
 const document = attrs => new JSDOM(`<!doctype html><body><div ${attrs}><div data-rightbar-col></div></div></body>`).window.document
 

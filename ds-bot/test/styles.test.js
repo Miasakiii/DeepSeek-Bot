@@ -9,7 +9,8 @@ import { build } from 'esbuild'
 
 // jsdom and the real client module system come from the harness, as the dsh packages do.
 const PLUGIN = dirname(dirname(fileURLToPath(import.meta.url)))
-const harness = process.env.DSH_HARNESS ?? join(PLUGIN, '..', 'deepseek-harness')
+// jsdom is a devDependency; the DSH client module this file reads still comes from the harness.
+const harness = process.env.DSH_HARNESS ?? PLUGIN
 const requireHarness = createRequire(join(harness, 'package.json'))
 const { JSDOM } = requireHarness('jsdom')
 
