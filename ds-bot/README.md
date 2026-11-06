@@ -87,7 +87,8 @@ port is named, so a DSH window is untouched.
   name: miasaki-dsbot
   config:
     outletPort: 0                   # 0 lets the system pick a free port; absent leaves it off
-    outletToken: a-secret           # absent: a fresh one per start, printed once at start-up
+    outletToken: a-secret           # absent: a fresh one per start, never logged
+                                    # (the launcher reads it from rt.outletReady())
     outletRoot: /path/to/ui/dist    # the window's files; absent: no files served
 ```
 
