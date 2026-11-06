@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { setTimeout as realDelay } from 'node:timers/promises'
-import { apply } from '../index.js'
+import { apply } from '../src/host/runtime.js'
 import { fakeContext } from './fake-ctx.js'
 import { stripWrittenCalls, writesToolCall } from '../src/host/turns.js'
 

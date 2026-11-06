@@ -8,7 +8,9 @@ import { READ_LIMITS, READ_PAGE_SCRIPT, readPageScript } from '../src/client/rea
 
 // jsdom comes from the deepseek-harness checkout next to ds-bot, like the dsh packages.
 const PLUGIN = dirname(dirname(fileURLToPath(import.meta.url)))
-const harness = process.env.DSH_HARNESS ?? join(PLUGIN, '..', 'deepseek-harness')
+// jsdom is a devDependency: without a harness the plugin's own copy answers, and with one the
+// harness copy stays the source, as before.
+const harness = process.env.DSH_HARNESS ?? PLUGIN
 const { JSDOM } = createRequire(join(harness, 'package.json'))('jsdom')
 
 const PAGE = `<!doctype html><html lang="en"><head><title>Sample</title>

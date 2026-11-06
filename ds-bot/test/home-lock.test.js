@@ -5,7 +5,7 @@ import { syncBuiltinESMExports } from 'node:module'
 import { hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { apply } from '../index.js'
+import { apply } from '../src/host/runtime.js'
 import { homeLock } from '../src/host/home-lock.js'
 import { fakeContext } from './fake-ctx.js'
 

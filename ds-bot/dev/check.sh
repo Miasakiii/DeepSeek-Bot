@@ -1,9 +1,11 @@
 #!/bin/sh
 # One-command check of this checkout on both ends, with the mock model only:
-#   unit     npm test
+#   unit     npm test and the contract locks (npm run test:contract)
 #   build    client.js matches src/client (build-client.mjs --check)
 #   lint     npm run lint (warnings do not fail)
 #   smoke    a fresh smoke bench and dev/smoke.mjs
+#   golden   the smoke scenario twice, on two fresh benches, and the diff between them
+#            (dev/golden-diff.mjs; zero differences is the gate into phase C1)
 #   web      a fresh Web bench and dev/ui-shots.mjs (sidebar, private chat, group, settings)
 #   desktop  a fresh Desktop (desktop-linux/desktop.sh), the same shots, browser-check.mjs,
 #            and read-check.mjs on the sample pages (dev/read-pages.mjs on 88n4)
@@ -13,9 +15,10 @@
 #
 # Screenshots and logs go to --out (default: shots/check-<YYYYMMDD-HHMM> beside ds-bot/ in
 # the main worktree).
-# Ports follow SLOT=n (0-9, default 0): Web 31n0/88n0, smoke 31n1/88n1, and the Desktop
-# ports of desktop.sh. Bench data: <checkout>/.dsh-test-check-web, -check-smoke and
-# .dsh-test-desktop-check. Web shots need Chrome or Chromium (CHROME_BIN, see ui-shots.mjs);
+# Ports follow SLOT=n (0-9, default 0): Web 31n0/88n0, smoke 31n1/88n1, golden 31n2/88n2,
+# and the Desktop ports of desktop.sh. Bench data: <checkout>/.dsh-test-check-web,
+# -check-smoke, -check-golden and .dsh-test-desktop-check. Web shots need Chrome or
+# Chromium (CHROME_BIN, see ui-shots.mjs);
 # the Desktop step needs xvfb-run and ffmpeg and about 1 GB of memory.
 set -u
 PLUGIN="$(cd "$(dirname "$0")/.." && pwd)"
@@ -24,7 +27,7 @@ MAIN="$(dirname "$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-
 MAIN="${MAIN%/}"
 SLOT=${SLOT:-0}
 case "$SLOT" in [0-9]) ;; *) echo "SLOT must be one digit" >&2; exit 2 ;; esac
-STEPS="unit build lint smoke web desktop"
+STEPS="unit build lint smoke golden web desktop"
 SKIP=""
 ONLY=""
 OUT=""
@@ -33,7 +36,7 @@ while [ $# -gt 0 ]; do
     --skip) SKIP=$(echo "$2" | tr ',' ' '); shift 2 ;;
     --only) ONLY=$(echo "$2" | tr ',' ' '); shift 2 ;;
     --out) OUT=$2; shift 2 ;;
-    -h|--help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown option $1 (see --help)" >&2; exit 2 ;;
   esac
 done
@@ -51,10 +54,12 @@ if [ -z "${DSH_HARNESS:-}" ]; then
 fi
 export DSH_HARNESS
 WEB_PORT=31${SLOT}0 WEB_MOCK=88${SLOT}0 SMOKE_PORT=31${SLOT}1 SMOKE_MOCK=88${SLOT}1
+GOLDEN_PORT=31${SLOT}2 GOLDEN_MOCK=88${SLOT}2
 DESKTOP="$PLUGIN/dev/desktop-linux/desktop.sh"
 
 cleanup() {
   "$PLUGIN/dev/bench.sh" check-smoke "$SMOKE_PORT" "$SMOKE_MOCK" stop >/dev/null 2>&1
+  "$PLUGIN/dev/bench.sh" check-golden "$GOLDEN_PORT" "$GOLDEN_MOCK" stop >/dev/null 2>&1
   "$PLUGIN/dev/bench.sh" check-web "$WEB_PORT" "$WEB_MOCK" stop >/dev/null 2>&1
   SLOT=$SLOT "$DESKTOP" check stop >/dev/null 2>&1
   pages="$ROOT/.dsh-test-desktop-check/read-pages.pid"
@@ -83,7 +88,7 @@ need_ports() {
   done
 }
 
-step_unit() { cd "$PLUGIN" && npm test; }
+step_unit() { cd "$PLUGIN" && npm test && npm run test:contract; }
 step_build() { cd "$PLUGIN" && node scripts/build-client.mjs --check; }
 step_lint() { cd "$PLUGIN" && npm run lint; }
 step_smoke() {
@@ -95,6 +100,25 @@ step_smoke() {
   node dev/smoke.mjs check-smoke "$SMOKE_PORT"
   status=$?
   dev/bench.sh check-smoke "$SMOKE_PORT" "$SMOKE_MOCK" stop
+  return $status
+}
+# The gate into phase C1: the same scenario on two fresh benches must write the same
+# transcript, so a later difference is a behavior change and not the harness moving under it.
+step_golden() {
+  cd "$PLUGIN" || return 1
+  dev/bench.sh check-golden "$GOLDEN_PORT" "$GOLDEN_MOCK" stop >/dev/null
+  need_ports "$GOLDEN_PORT" "$GOLDEN_MOCK" || return 1
+  export CONTEXT_WINDOW=100000 CHECK_RATIO=0.45
+  for run in a b; do
+    bench_reset check-golden "$GOLDEN_PORT" "$GOLDEN_MOCK" || return 1
+    node dev/smoke.mjs check-golden "$GOLDEN_PORT" --out "$OUT/golden-$run.json"
+    status=$?
+    dev/bench.sh check-golden "$GOLDEN_PORT" "$GOLDEN_MOCK" stop
+    if [ $status -ne 0 ]; then return $status; fi
+  done
+  node dev/golden-diff.mjs "$OUT/golden-a.json" "$OUT/golden-b.json" --out "$OUT/golden-diff.md"
+  status=$?
+  if [ $status -ne 0 ]; then echo "   diff: $OUT/golden-diff.md"; fi
   return $status
 }
 step_web() {

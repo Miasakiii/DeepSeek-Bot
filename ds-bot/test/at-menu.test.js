@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { formatSessionReferenceMention, parseSessionReferenceText } from '@deepseek-ai/dsh-session-reference'
+import { formatSessionReferenceMention, parseSessionReferenceText } from './session-reference.js'
 import { BOTS_SOURCE, CHATS_SOURCE, atSources, chatRows, mentionRows, sessionMention } from '../src/client/at-menu.js'
 import { indexRoster } from '../src/client/sources.js'
 
@@ -20,6 +20,25 @@ test('a session mention is the one DSH writes and reads back', () => {
     assert.equal(mention, formatSessionReferenceMention({ sessionId: id, label }))
     assert.deepEqual(parseSessionReferenceText(`see ${mention}`), { text: `see @${label}`, references: [{ sessionId: id, label }] })
   }
+})
+
+test('a mention whose payload is not a session id stays as the plain text it came in', () => {
+  // Locked as this reader's current semantics (plan 2026-10-30 §1.2 gap 5, decision
+  // N-02), not a fix: DSH's dsh-session-reference throws SessionReferenceError on any
+  // malformed URI, while this one leaves a bad payload in the text exactly as written.
+  const payloads = [
+    // Base64url-shaped, but the bytes are not JSON.
+    Buffer.from('not json', 'utf8').toString('base64url'),
+    // JSON, but not the session id string the mention carries.
+    Buffer.from(JSON.stringify({ id: 's-1' }), 'utf8').toString('base64url'),
+  ]
+  for (const payload of payloads) {
+    const mention = `@[Chat with King](dsh-session:${payload})`
+    assert.deepEqual(parseSessionReferenceText(`see ${mention}`), { text: `see ${mention}`, references: [] })
+  }
+  // Outside the base64url alphabet the mention shape does not match at all.
+  const alien = '@[x](dsh-session:!!)'
+  assert.deepEqual(parseSessionReferenceText(alien), { text: alien, references: [] })
 })
 
 test('"@" offers a group\'s members and everyone, or every other Bot in a Bot\'s chat', () => {

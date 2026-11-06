@@ -33,3 +33,6 @@ __pycache__/
 
 # The workflow runner's working directory in this checkout (its run journals and local logs).
 .zcode/
+
+# The StepCode runner's working directory in this checkout (its run journals and local logs).
+.stepcode/

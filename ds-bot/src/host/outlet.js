@@ -165,9 +165,9 @@ export function install(rt) {
   // a caller asks for it.
   readyPromise.catch(() => {})
   server.listen(port, '127.0.0.1', () => {
-    // The token is a secret: it is printed once, at the start, for whoever launches the
-    // window; nothing logs it again.
-    console.info(`ds-bot: own outlet on http://127.0.0.1:${server.address().port} (token ${token})`)
+    // The token never reaches a log: a launcher who names no outletToken takes it from
+    // outletReady below, and whoever configures the outlet by hand sets the token themselves.
+    console.info(`ds-bot: own outlet on http://127.0.0.1:${server.address().port}`)
     ready.resolve({ port: server.address().port, token })
   })
   server.on('error', (error) => {

@@ -9,9 +9,11 @@ import { build } from 'esbuild'
 
 // jsdom and the real client module system come from the harness, as the dsh packages do.
 const PLUGIN = dirname(dirname(fileURLToPath(import.meta.url)))
+// The DSH client module below is what this file checks its styles against, so the harness
+// stays the anchor; jsdom alone comes from the plugin's own devDependency.
 const harness = process.env.DSH_HARNESS ?? join(PLUGIN, '..', 'deepseek-harness')
 const requireHarness = createRequire(join(harness, 'package.json'))
-const { JSDOM } = requireHarness('jsdom')
+const { JSDOM } = createRequire(import.meta.url)('jsdom')
 
 // The style helpers and the CSS they ship, bundled once with a minimal React for
 // motion.js; they run in each test's jsdom document through the vm context.

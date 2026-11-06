@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { createRuntime } from '../index.js'
+import { createRuntime } from '../src/host/runtime.js'
 import { fakeContext } from './fake-ctx.js'
 
 // The fixture stands in for an MCP server: it reports back the argv and env it was

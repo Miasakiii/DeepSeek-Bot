@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { createRuntime } from '../index.js'
+import { createRuntime } from '../src/host/runtime.js'
 import { fakeContext } from './fake-ctx.js'
 
 // The plugin with its own HTTP outlet on a free port, beside the DSH connection route.
@@ -48,7 +48,28 @@ test('the outlet stays off until the config names a port', async (t) => {
   assert.equal(rt.outletPort, undefined)
 })
 
-test('the outlet answers the channel over its own port, with the token it prints', async (t) => {
+// The launcher of a window that names no token reads it from outletReady; a log line is
+// openable by anyone who can read the Host's output.
+test('the start-up line names the outlet but never its token', async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'ds-bot-outlet-'))
+  const ctx = fakeContext()
+  t.after(() => rmSync(home, { recursive: true, force: true, maxRetries: 5 }))
+  const rt = createRuntime(ctx, { home, outletPort: 0 })
+  const lines = []
+  const info = console.info
+  console.info = (...args) => { lines.push(args.join(' ')) }
+  try {
+    const { port, token } = await rt.outletReady()
+    assert.ok(rt.outletToken().length > 0)
+    assert.ok(lines.some(line => line.includes(`http://127.0.0.1:${port}`)))
+    assert.ok(!lines.some(line => line.includes(token)), `the token leaked into: ${lines.join(' | ')}`)
+    t.after(async () => { await ctx.dispose() })
+  } finally {
+    console.info = info
+  }
+})
+
+test('the outlet answers the channel over its own port, with the token it was given', async (t) => {
   const { stop, base, token } = await start()
   t.after(stop)
   // Without the token the channel is not reachable at all.

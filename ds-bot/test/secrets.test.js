@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, wr
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { apply } from '../index.js'
+import { apply } from '../src/host/runtime.js'
 import { canUse, encodeUrlComponent, normalizeName, redactDeep, redactor, SECRET_NAME } from '../src/host/secrets.js'
 import { fakeContext } from './fake-ctx.js'
 

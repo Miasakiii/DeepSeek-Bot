@@ -1,26 +1,40 @@
+// The browser tools on the fake host's tool board (C0.3): the same four behaviors the real
+// DSH runtime is locked to in dev/contract/browser-tool-output.test.js, asserted here with no
+// harness, so the suite runs on the shape of the runtime phase C builds.
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { Context } from '@deepseek-ai/cordis'
-import { ToolCallId } from '@deepseek-ai/dsh-llm'
-import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime, { defineTool } from '@deepseek-ai/dsh-tools'
 import { mountBrowserPlugin } from '../src/host/browser/mount.js'
 import { toolDefs as refsTools } from '../src/host/browser/refs.js'
+import { defineTool } from '../src/host/vendor/tools.js'
+import { fakeHost } from './fake-host.js'
 
-test('browser handoff and resume return valid DSH outputs and clear the Bot hold', async t => {
-  const ctx = new Context()
-  await ctx.plugin(SystemPrompt)
-  await ctx.plugin(ToolRuntime)
-  t.after(async () => ctx.fiber.dispose())
+// The tools of one browser plugin, registered on a host of their own and ready to execute.
+const browserTools = (t, { names, options }) => {
+  const host = fakeHost()
+  const plugin = ctx => mountBrowserPlugin(ctx, {
+    toolDefs: refsTools.filter(tool => names.includes(tool.name)),
+    defineTool,
+    keyOf: async () => 'bot-1',
+    profileRoot: '/tmp/browser-profiles',
+    headless: true,
+    ...options,
+  })
+  plugin.inject = ['tools']
+  const ctx = host.plugin(host.rootFiber, plugin).ctx
+  t.after(() => host.dispose())
+  return (name, args) => ctx.tools.execute({
+    signal: new AbortController().signal,
+    callId: name,
+    name,
+    arguments: args,
+  })
+}
 
+test('browser handoff and resume return valid outputs and clear the Bot hold', async t => {
   let hold = null
-  const plugin = inner => {
-    mountBrowserPlugin(inner, {
-      toolDefs: refsTools.filter(tool => ['browser_handoff', 'browser_resume', 'browser_screenshot'].includes(tool.name)),
-      defineTool,
-      keyOf: async () => 'bot-1',
-      profileRoot: '/tmp/browser-profiles',
-      headless: true,
+  const execute = browserTools(t, {
+    names: ['browser_handoff', 'browser_resume', 'browser_screenshot'],
+    options: {
       openSession: async ({ getHold, onHold }) => ({
         handoff(reason, note) {
           const safeNote = String(note ?? '').slice(0, 300)
@@ -39,16 +53,7 @@ test('browser handoff and resume return valid DSH outputs and clear the Bot hold
       }),
       getHold: () => hold,
       onHold: (botId, value) => { hold = value },
-    })
-  }
-  plugin.inject = ['tools']
-  await ctx.plugin(plugin)
-
-  const execute = (name, args) => ctx.tools.execute({
-    signal: new AbortController().signal,
-    callId: ToolCallId(name),
-    name,
-    arguments: args,
+    },
   })
 
   const handoff = await execute('browser_handoff', { reason: 'other', note: 'Please take over.' })
@@ -78,18 +83,10 @@ test('browser handoff and resume return valid DSH outputs and clear the Bot hold
 })
 
 test('browser tools refuse every operation while a user hold is active', async t => {
-  const ctx = new Context()
-  await ctx.plugin(SystemPrompt)
-  await ctx.plugin(ToolRuntime)
-  t.after(async () => ctx.fiber.dispose())
   const hold = { by: 'user', reason: 'stopped', note: 'The user is controlling this browser.' }
-  const plugin = inner => {
-    mountBrowserPlugin(inner, {
-      toolDefs: refsTools.filter(tool => ['browser_tabs', 'browser_screenshot', 'browser_handoff', 'browser_resume'].includes(tool.name)),
-      defineTool,
-      keyOf: async () => 'bot-1',
-      profileRoot: '/tmp/browser-profiles',
-      headless: true,
+  const execute = browserTools(t, {
+    names: ['browser_tabs', 'browser_screenshot', 'browser_handoff', 'browser_resume'],
+    options: {
       openSession: async () => ({
         async tabs() { return [] },
         async shot() { return { text: 'shot' } },
@@ -98,15 +95,7 @@ test('browser tools refuse every operation while a user hold is active', async t
         async close() {},
       }),
       getHold: () => hold,
-    })
-  }
-  plugin.inject = ['tools']
-  await ctx.plugin(plugin)
-  const execute = (name, args) => ctx.tools.execute({
-    signal: new AbortController().signal,
-    callId: ToolCallId(name),
-    name,
-    arguments: args,
+    },
   })
   for (const [name, args] of [
     ['browser_tabs', { action: 'list' }],
@@ -121,18 +110,11 @@ test('browser tools refuse every operation while a user hold is active', async t
 })
 
 test('browser endpoint connection uses the execution Bot identity, not tool arguments', async t => {
-  const ctx = new Context()
-  await ctx.plugin(SystemPrompt)
-  await ctx.plugin(ToolRuntime)
-  t.after(async () => ctx.fiber.dispose())
   let connected
-  const plugin = inner => {
-    mountBrowserPlugin(inner, {
-      toolDefs: refsTools.filter(tool => tool.name === 'browser_open'),
-      defineTool,
+  const execute = browserTools(t, {
+    names: ['browser_open'],
+    options: {
       keyOf: async () => 'a',
-      profileRoot: '/tmp/browser-profiles',
-      headless: true,
       connect: async botId => { connected = botId; return 'ws://127.0.0.1:1' },
       openSession: async options => {
         await options.connect?.(options.botId)
@@ -141,60 +123,37 @@ test('browser endpoint connection uses the execution Bot identity, not tool argu
           async close() {},
         }
       },
-    })
-  }
-  plugin.inject = ['tools']
-  await ctx.plugin(plugin)
-  const result = await ctx.tools.execute({
-    signal: new AbortController().signal,
-    callId: ToolCallId('browser_open'),
-    name: 'browser_open',
-    arguments: { url: 'http://127.0.0.1:43118/', botId: 'b' },
+    },
   })
+  const result = await execute('browser_open', { url: 'http://127.0.0.1:43118/', botId: 'b' })
   assert.equal(result.isError, false, result.error?.message)
   assert.equal(connected, 'a')
 })
 
 test('a channel user hold closes the cached Playwright session and give-back reconnects', async t => {
-  const ctx = new Context()
-  await ctx.plugin(SystemPrompt)
-  await ctx.plugin(ToolRuntime)
-  t.after(async () => ctx.fiber.dispose())
   let hold = null
   let notifyHold
   let opens = 0
   let closes = 0
-  const plugin = inner => {
-    mountBrowserPlugin(inner, {
-      toolDefs: refsTools.filter(tool => tool.name === 'browser_snapshot'),
-      defineTool,
-      keyOf: async () => 'bot-1',
-      profileRoot: '/tmp/browser-profiles',
-      headless: true,
+  const execute = browserTools(t, {
+    names: ['browser_snapshot'],
+    options: {
       getHold: () => hold,
       subscribeHolds: listener => { notifyHold = listener; return () => { notifyHold = undefined } },
       openSession: async () => {
         opens += 1
         return { snapshotText: async () => 'page', async close() { closes += 1 } }
       },
-    })
-  }
-  plugin.inject = ['tools']
-  await ctx.plugin(plugin)
-  const execute = () => ctx.tools.execute({
-    signal: new AbortController().signal,
-    callId: ToolCallId('browser_snapshot'),
-    name: 'browser_snapshot',
-    arguments: {},
+    },
   })
-  assert.equal((await execute()).isError, false)
+  assert.equal((await execute('browser_snapshot', {})).isError, false)
   hold = { by: 'user', reason: 'takeover', note: '' }
   notifyHold('bot-1', hold)
   await new Promise(resolve => setImmediate(resolve))
   assert.equal(closes, 1)
-  assert.equal((await execute()).isError, true)
+  assert.equal((await execute('browser_snapshot', {})).isError, true)
   hold = null
   notifyHold('bot-1', null)
-  assert.equal((await execute()).isError, false)
+  assert.equal((await execute('browser_snapshot', {})).isError, false)
   assert.equal(opens, 2)
 })

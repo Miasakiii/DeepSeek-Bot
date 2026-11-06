@@ -255,6 +255,7 @@ export function install(rt) {
       const models = await discoverWireModels({
         protocol: PROTOCOLS.includes(body.api) ? body.api : 'openai-completions',
         baseURL: checkEndpoint(body.baseURL),
+        identity: rt.ownIdentity,
         ...(key === undefined ? {} : { apiKey: key }),
       })
       return models.slice(0, MAX_MODELS)

@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileS
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { createRuntime } from '../index.js'
+import { createRuntime } from '../src/host/runtime.js'
 import { lineText } from '../src/host/groups.js'
 import { fakeAttachments, fakeContext } from './fake-ctx.js'
 

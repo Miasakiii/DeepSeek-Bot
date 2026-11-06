@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { createRuntime } from '../index.js'
+import { createRuntime } from '../src/host/runtime.js'
 import { SIDE_MARKER } from '../src/host/side.js'
 import { fakeContext } from './fake-ctx.js'
 

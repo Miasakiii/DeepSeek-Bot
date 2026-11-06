@@ -37,8 +37,10 @@ jobs:
       - name: Install DSH ${{ matrix.dsh }}
         run: npm run harness -- --no-save "@deepseek-ai/dsh@${{ matrix.dsh }}"
       - run: npm test
+      - run: npm run test:contract
       - run: node scripts/build-client.mjs --check
       - run: npm run lint
+      - run: node scripts/check-dsh-imports.mjs
 
   scan:
     name: Leak scan

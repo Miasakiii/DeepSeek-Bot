@@ -2,7 +2,7 @@
 // directory, including the group Sessions where that Bot speaks.
 import { isAbsolute, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import { defineTool } from './vendor/tools.js'
 import { mountBrowserPlugin } from './browser/mount.js'
 import { sessionComplete } from './browser/session-model.js'
 import * as refs from './browser/refs.js'

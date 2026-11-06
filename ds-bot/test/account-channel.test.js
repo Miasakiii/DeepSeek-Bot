@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { apply } from '../index.js'
+import { apply } from '../src/host/runtime.js'
 import { install as installChannel } from '../src/host/channel.js'
 import { fakeContext } from './fake-ctx.js'
 
@@ -109,6 +109,10 @@ test('a host that only reads the team still answers the account state, but chang
   assert.equal((await post('account-state', {})).ok, true)
   const refused = await post('account-sign-in', {})
   assert.deepEqual([refused.ok, refused.error.code], [false, 'bot/read-only'])
+  const cancelled = await post('account-cancel', {})
+  assert.deepEqual([cancelled.ok, cancelled.error.code], [false, 'bot/read-only'])
+  const signedOut = await post('account-sign-out', {})
+  assert.deepEqual([signedOut.ok, signedOut.error.code], [false, 'bot/read-only'])
 })
 
 // The whole plugin on a fake context, so the account module and the feed run with the
