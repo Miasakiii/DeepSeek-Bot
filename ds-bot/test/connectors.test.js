@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { apply } from '../index.js'
+import { apply } from '../src/host/runtime.js'
 import { signIn } from '../src/host/connectors.js'
 import { fakeContext } from './fake-ctx.js'
 

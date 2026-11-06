@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { apply } from '../index.js'
+import { apply } from '../src/host/runtime.js'
 import { PENDING_FILE, record } from '../src/host/memory-pending.js'
 import { fakeContext } from './fake-ctx.js'
 

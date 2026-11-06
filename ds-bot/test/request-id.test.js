@@ -4,7 +4,7 @@ import { hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { test } from 'node:test'
-import { createRuntime } from '../index.js'
+import { createRuntime } from '../src/host/runtime.js'
 import { fakeContext } from './fake-ctx.js'
 import { install as installRequests } from '../src/host/requests.js'
 

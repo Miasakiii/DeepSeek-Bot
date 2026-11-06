@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { createRuntime } from '../index.js'
+import { createRuntime } from '../src/host/runtime.js'
 import { fakeContext } from './fake-ctx.js'
 
 // Fei2411/DeepSeek-Bot#37: under DSH Desktop's default PTC preset a model may call only

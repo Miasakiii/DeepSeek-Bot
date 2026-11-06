@@ -1,10 +1,10 @@
 // The only host module that imports DSH's LLM package: the base class an adapter must
 // extend to be registered with the harness, and the harness's own identity, which every
-// own-provider request names in its User-Agent. Everything the adapter does lives in
-// llm.js, which loads without a harness.
+// own-provider request names in its User-Agent. index.js hands both to the runtime, so the
+// team itself loads without a harness.
 import { APP_IDENTITY, LlmAdapter } from '@deepseek-ai/dsh-llm'
-import { botLlmAdapter, install as installCore } from './llm.js'
+import { botLlmAdapter } from './llm.js'
 
-const BotLlmAdapter = botLlmAdapter(LlmAdapter)
+export const BotLlmAdapter = botLlmAdapter(LlmAdapter)
 
-export const install = rt => installCore(rt, BotLlmAdapter, APP_IDENTITY)
+export { APP_IDENTITY }

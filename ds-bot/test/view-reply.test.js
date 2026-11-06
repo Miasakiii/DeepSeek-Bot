@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { apply } from '../index.js'
+import { apply } from '../src/host/runtime.js'
 import { normalizeView, VIEW_BYTE_LIMIT, viewBytes } from '../src/shared/views.js'
 import { fakeContext } from './fake-ctx.js'
 
